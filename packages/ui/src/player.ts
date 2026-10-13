@@ -186,13 +186,15 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
    * The part of the stage no panel covers. On a wide screen, the column
    * between the text panel (left) and the diagram (right), under the top bars
    * and above the timeline: it does not move when the text grows or the
-   * diagram hides. On a narrow screen (a column under 180 px), the band
-   * above the panels.
+   * diagram hides. On a narrow screen, where the panels stack, the room the
+   * column leaves above the diagram. In between (a column under 180 px), the
+   * band above the panels.
    */
   function safeArea(): Rect {
     const S = stageEl.getBoundingClientRect();
     if (!S.width || mode !== 'tour') return { x: 0, y: 0, w: S.width, h: S.height };
     const r = panel.regions();
+    if (r.room.height) return { x: r.room.left - S.left, y: r.room.top - S.top, w: r.room.width, h: r.room.height };
     const top = Math.max(S.top, ...r.tops.map((b) => b.bottom)) + 8;
     const bottom = Math.min(S.bottom, r.bar.height ? r.bar.top : S.bottom) - 8;
     const left = r.cap.width ? r.cap.right + 12 : S.left;

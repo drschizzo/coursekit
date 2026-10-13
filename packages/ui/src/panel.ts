@@ -101,6 +101,7 @@ export class Panel {
 
   private tops: HTMLElement[] = [];
   private barEl!: HTMLElement;
+  private roomEl!: HTMLElement;
 
   constructor(tl: Timeline, hooks: PanelHooks, x: PanelContext) {
     this.tl = tl; this.hooks = hooks; this.x = x;
@@ -184,7 +185,14 @@ export class Panel {
     this.setViewFree(false);
     this.tip = h('div', 'c-tip hidden');
 
-    this.root.append(top, actions, this.cap, this.diagEl, bar, this.badge, this.viewEl, this.tip);
+    // the bars along the top: the toolbar wraps under the title when they do not fit
+    const headRow = h('div', 'c-headrow');
+    headRow.append(top, actions);
+    const head = h('div', 'c-head');
+    head.append(headRow, this.badge, this.viewEl);
+    // on a narrow screen the panels stack in a column; this empty box is the stage's share of it
+    this.roomEl = h('div', 'c-room');
+    this.root.append(head, this.roomEl, this.diagEl, this.cap, bar, this.tip);
     this.tops = [top, actions, this.badge];
     this.barEl = bar;
 
@@ -295,14 +303,17 @@ export class Panel {
    * Where the panels sit, in viewport pixels: the bars along the top, the
    * text panel, the diagram (its place is kept even when hidden, so that the
    * safe area does not move between steps) and the timeline at the bottom.
+   * On a narrow screen, where the panels stack, `room` is the part of the
+   * column left to the stage (empty otherwise).
    */
-  regions(): { tops: DOMRect[]; cap: DOMRect; diag: DOMRect; bar: DOMRect } {
+  regions(): { tops: DOMRect[]; cap: DOMRect; diag: DOMRect; bar: DOMRect; room: DOMRect } {
     const vis = (e: HTMLElement) => e.offsetParent !== null;
     return {
       tops: this.tops.filter(vis).map((e) => e.getBoundingClientRect()),
       cap: this.cap.getBoundingClientRect(),
       diag: this.diagEl.getBoundingClientRect(),
       bar: this.barEl.getBoundingClientRect(),
+      room: this.roomEl.getBoundingClientRect(),
     };
   }
 

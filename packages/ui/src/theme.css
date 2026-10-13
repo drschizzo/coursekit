@@ -43,9 +43,18 @@ button { font: inherit; color: inherit; }
 .course > * { pointer-events: auto; }
 
 /* ---------------------------------------------------------------- top bar */
+/* the title and the toolbar share a row, the toolbar wraps under the title
+   when they do not fit; the badge and the view button come below */
+.c-head {
+  position: absolute; top: 14px; left: 18px; right: 18px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+}
+.course > .c-head, .course > .c-room, .c-head > .c-headrow { pointer-events: none; }
+.c-headrow > *, .c-head > .c-badge, .c-head > .c-cam { pointer-events: auto; }
+.c-headrow { align-self: stretch; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px 12px; }
+.c-room { display: none; }
 .c-top {
-  position: absolute; top: 14px; left: 18px;
-  display: flex; align-items: baseline; gap: 12px;
+  display: flex; align-items: baseline; gap: 12px; min-width: 0;
   font-size: 12px; letter-spacing: .02em;
   background: var(--cpanel); backdrop-filter: blur(12px);
   border: 1px solid var(--cline); border-radius: 99px; padding: 7px 14px;
@@ -53,7 +62,7 @@ button { font: inherit; color: inherit; }
 .c-where { font-weight: 600; }
 .c-clock { font: 11px var(--mono); color: var(--muted); }
 
-.c-actions { position: absolute; top: 14px; right: 18px; display: flex; gap: 7px; }
+.c-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-left: auto; }
 .c-chip {
   display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px;
   border-radius: 99px; border: 1px solid var(--cline); background: var(--cpanel);
@@ -153,14 +162,12 @@ button { font: inherit; color: inherit; }
 .stop-mark:hover { transform: scale(1.5); }
 
 .c-badge {
-  position: absolute; left: 18px; top: 52px;
   font: 11px var(--mono); color: var(--muted);
   background: var(--cpanel); backdrop-filter: blur(12px);
   border: 1px solid var(--cline); border-radius: 99px; padding: 6px 12px;
 }
 .c-badge.baking { color: var(--warn); }
 .c-cam {
-  position: absolute; left: 18px; top: 86px;
   font: 11px Inter, system-ui, sans-serif; color: var(--muted);
   background: none; border: 0; padding: 2px 4px; opacity: .7; cursor: default;
 }
@@ -361,6 +368,37 @@ button { font: inherit; color: inherit; }
 @media (max-height: 760px) {
   .c-cap { max-height: calc(100% - 150px); bottom: 70px; }
   .c-diag { bottom: 70px; }
+}
+/* phone: the panels stack in a column — the bars, the stage's room, the
+   diagram, the text, the timeline. The toolbar stays on one row and scrolls
+   sideways. The diagram and the text keep a fixed share of the height (the
+   text takes the diagram's place when it hides), so the stage's room does
+   not move between steps. */
+@media (max-width: 760px) {
+  .course {
+    display: flex; flex-direction: column; gap: 6px; padding: 8px;
+    --dh: min(22%, calc((100vw - 32px) * 236 / 380 + 16px));
+  }
+  /* the badge and the view button share a row of fixed height */
+  .c-head { position: static; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .c-headrow { flex: 1 1 100%; min-width: 0; gap: 6px; }
+  .c-head > .c-cam { min-height: 29px; }
+  .c-top { flex-wrap: wrap; row-gap: 0; padding: 5px 12px; }
+  .c-actions {
+    flex: 1 1 100%; min-width: 0; margin-left: 0; justify-content: flex-start; flex-wrap: nowrap; gap: 5px;
+    overflow-x: auto; scrollbar-width: none; padding-right: 24px;
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  .c-actions::-webkit-scrollbar { display: none; }
+  .c-chip { height: 26px; padding: 0 9px; gap: 6px; font-size: 11.5px; }
+  .c-room { display: block; flex: 1 1 0; min-height: 0; }
+  .c-diag, .c-diag.big { position: static; flex: none; width: auto; height: var(--dh); display: flex; justify-content: center; }
+  .c-diag canvas { width: auto; height: 100%; max-width: 100%; }
+  .c-diag.out { display: none; }
+  .c-cap { position: static; flex: 0 1 auto; width: auto; height: 34%; max-height: none; min-height: 120px; padding: 12px 14px 10px; }
+  .course:has(> .c-diag.out) .c-cap { height: calc(34% + var(--dh) + 6px); }
+  .c-cap h2 { font-size: 17px; }
+  .c-bar { position: static; flex: none; }
 }
 
 /* =================================================================
