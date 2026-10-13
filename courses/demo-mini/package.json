@@ -1,0 +1,8 @@
+{
+  "name": "course-demo-mini",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite --port 5181 --strictPort", "build": "vite build", "check": "node ../../packages/tooling/src/cli.ts check src/course.ts" },
+  "dependencies": { "@coursekit/core": "*", "@coursekit/ui": "*", "@coursekit/diagrams": "*", "@coursekit/exercises": "*" },
+  "devDependencies": { "@coursekit/tooling": "*" }
+}

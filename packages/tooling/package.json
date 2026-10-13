@@ -1,0 +1,8 @@
+{
+  "name": "@coursekit/tooling",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "bin": { "coursekit": "./src/cli.ts" },
+  "dependencies": { "@coursekit/core": "*", "@coursekit/diagrams": "*", "@coursekit/exercises": "*" }
+}
