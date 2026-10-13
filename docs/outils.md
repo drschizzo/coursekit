@@ -18,7 +18,7 @@ Scripts de la racine :
 |---|---|
 | `npm test` | Typage, test des règles du vérificateur, `check` et `tune` de tous les cours. |
 | `npm run check` / `npm run tune` / `npm run build` | La même commande dans chaque cours. |
-| `npm run dev:fusee`, `npm run dev:demo` | Le serveur de développement d’un cours. |
+| `npm run dev:fusee`, `npm run dev:epidemie`, `npm run dev:demo` | Le serveur de développement d’un cours. |
 | `npm run new -- courses/<id> "<titre>"` | `coursekit new`. |
 | `npm run archive` | Une archive `coursekit-<version>.tar.gz` du dernier commit (voir [diffusion.md](diffusion.md)). |
 

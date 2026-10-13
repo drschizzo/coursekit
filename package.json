@@ -15,6 +15,7 @@
   "scripts": {
     "dev:demo": "npm run dev -w courses/demo-mini",
     "dev:fusee": "npm run dev -w courses/fusee",
+    "dev:epidemie": "npm run dev -w courses/epidemie",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "tsc -p tsconfig.json",
     "check": "npm run check --workspaces --if-present",

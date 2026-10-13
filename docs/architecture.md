@@ -63,5 +63,4 @@ coursekit a été extrait du cours intégré au projet avbd (« Anatomie d’un 
 le lecteur, la frise, les pauses, l’atelier, les fiches, les révisions et le vérificateur en
 viennent. Le format séquentiel (sans horodatage), le modèle comme point d’extension, les types
 d’exercices sans code, le réglage et les contrôles aux bornes ont été ajoutés pour que la
-bibliothèque convienne à n’importe quel sujet. Le cours fusée a servi de premier test ; ce qu’il a
-appris est dans [bilan.md](bilan.md).
+bibliothèque convienne à n’importe quel sujet. Le cours fusée a servi de premier test.

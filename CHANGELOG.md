@@ -21,6 +21,8 @@
 ### Cours
 
 - `courses/fusee` : « Comment fonctionne une fusée », 4 modules et une épreuve.
+- `courses/epidemie` : « Comment une épidémie se propage », 4 modules et une épreuve, écrit avec
+  `/generate_course`.
 - `courses/demo-mini` : cours jouet couvrant chaque élément du format.
 
 ### Skill

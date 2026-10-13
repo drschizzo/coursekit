@@ -36,10 +36,31 @@ Node 22.18 ou plus récent (le code TypeScript est exécuté directement par Nod
 
 ```bash
 npm install
-npm run dev:fusee        # le cours « Comment fonctionne une fusée », http://localhost:5182
-npm run dev:demo         # le cours jouet, http://localhost:5181
 npm test                 # typage, règles du vérificateur, vérification et réglage des cours
 ```
+
+## Lancer les cours d’exemple
+
+Le dépôt contient trois cours. Chacun se lance depuis la racine du dépôt, après `npm install`,
+et s’ouvre dans le navigateur à l’adresse indiquée :
+
+| Commande | Cours | Adresse |
+|---|---|---|
+| `npm run dev:fusee` | « Comment fonctionne une fusée » : poussée, fusée à étages, vol jusqu’à l’orbite (lycée, 3 à 4 h). | http://localhost:5182 |
+| `npm run dev:epidemie` | « Comment une épidémie se propage » : R0, modèle SIR, vaccination, aplatir la courbe (lycée, 3 à 4 h). Écrit avec `/generate_course`. | http://localhost:5183 |
+| `npm run dev:demo` | Le cours jouet : la chute d’un objet, avec chaque élément du format une fois. | http://localhost:5181 |
+
+Le cours s’ouvre sur sa page d’accueil ; « Commencer le cours » lance la visite pas à pas. Les mêmes
+commandes existent pour chaque cours, avec `-w courses/<cours>` :
+
+```bash
+npm run check -w courses/epidemie    # relit le cours (textes, affirmations, exercices, bornes)
+npm run tune -w courses/epidemie     # vérifie les fenêtres de réglage du modèle
+npm run build -w courses/epidemie    # site statique dans courses/epidemie/dist/
+```
+
+Dans la console du navigateur, `window.course.list()` liste les chapitres et
+`window.course.goto(chapitre, étape)` y saute ; `/?shots` affiche tous les schémas.
 
 Créer un cours :
 
@@ -61,6 +82,7 @@ Puis lire [docs/ecrire-un-cours.md](docs/ecrire-un-cours.md).
 | [`packages/ui`](packages/ui) | Le lecteur (`mountCourse`), les scènes fournies, le thème. |
 | [`packages/tooling`](packages/tooling) | La commande `coursekit` : `check`, `tune`, `stats`, `new`. |
 | [`courses/fusee`](courses/fusee) | Un cours complet : comment fonctionne une fusée (lycée, 3 à 4 h). |
+| [`courses/epidemie`](courses/epidemie) | Un cours complet écrit avec `/generate_course` : comment une épidémie se propage (lycée, 3 à 4 h). |
 | [`courses/demo-mini`](courses/demo-mini) | Un cours jouet qui utilise chaque élément du format une fois. |
 | [`skill/generate_course`](skill/generate_course) | La skill Claude `/generate_course <sujet>`, qui écrit un cours complet avec coursekit. |
 | [`docs`](docs) | La documentation. |
@@ -72,7 +94,6 @@ Puis lire [docs/ecrire-un-cours.md](docs/ecrire-un-cours.md).
 - [Outils](docs/outils.md) : `coursekit check`, `tune`, `stats`, `new`, et les aides au test dans le navigateur.
 - [Architecture](docs/architecture.md) : comment les paquets s’assemblent.
 - [Diffusion](docs/diffusion.md) : installer coursekit, publier un cours, conditions de diffusion.
-- [Bilan du premier cours](docs/bilan.md) : ce que l’écriture du cours fusée a appris.
 - [Contribuer](CONTRIBUTING.md) · [Historique des versions](CHANGELOG.md)
 
 ## Statut
