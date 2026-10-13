@@ -19,7 +19,7 @@ npm test           # typage, règles du vérificateur, check et tune de tous les
 | `packages/tooling` | `coursekit check`, `tune`, `stats`, `new` ; `test/` contient le cours défectueux qui fait réagir chaque règle. |
 | `courses/*` | Les cours. Ils servent aussi de tests d’intégration. |
 | `docs/` | La documentation. |
-| `skill/` | La skill `/generate_course`. |
+| `.claude/skills/generate_course` | La skill `/generate_course`. |
 
 ## Conventions de code
 
@@ -36,7 +36,7 @@ npm test           # typage, règles du vérificateur, check et tune de tous les
 - Toute nouvelle règle du vérificateur s’accompagne d’un défaut dans
   `packages/tooling/test/faulty.ts` et de son nom dans `test/run.ts`.
 - Un changement qui touche le format d’un cours met à jour `docs/ecrire-un-cours.md`,
-  `docs/reference.md`, la skill (`skill/generate_course/SKILL.md`) et le `CHANGELOG.md`.
+  `docs/reference.md`, la skill (`.claude/skills/generate_course/SKILL.md`) et le `CHANGELOG.md`.
 - Les deux cours doivent rester à « ✓ prêt (0 remarque) » ; vérifier aussi dans le navigateur
   (`npm run dev:fusee`, puis `/?shots` et une visite avec `window.course.goto`).
 

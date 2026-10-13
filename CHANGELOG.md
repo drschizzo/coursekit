@@ -27,4 +27,5 @@
 
 ### Skill
 
-- `skill/generate_course` : spécification de `/generate_course <sujet>`.
+- `.claude/skills/generate_course` : spécification de `/generate_course <sujet>`, disponible
+  dans toute session Claude Code ouverte dans le dépôt.

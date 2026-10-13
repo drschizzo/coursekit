@@ -7,4 +7,6 @@ dist/
 # editors and local tools
 .idea/
 .vscode/
-.claude/
+.claude/*
+# the /generate_course skill is part of the project
+!.claude/skills/

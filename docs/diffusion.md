@@ -55,6 +55,8 @@ npm run dev -w cours/mon-cours
 ```
 
 Pour le contrôle de types, reprendre le `tsconfig.json` de coursekit en adaptant `include`.
+Pour disposer de `/generate_course` dans ce projet, copier `coursekit/.claude/skills/generate_course`
+dans son dossier `.claude/skills/`.
 
 Les dépendances entre paquets (`"@coursekit/core": "*"`) ne se résolvent qu’ainsi : une
 installation paquet par paquet depuis des archives `npm pack` ne fonctionne pas.
@@ -77,20 +79,6 @@ Aucun serveur n’est nécessaire. La progression de chaque élève reste dans s
 Le cours publié contient le code de la bibliothèque. Diffuser un cours à des élèves est
 l’usage prévu de coursekit ; diffuser la bibliothèque elle-même suit les conditions de
 [LICENSE](../LICENSE).
-
-## La skill Claude `/generate_course`
-
-[`skill/generate_course/SKILL.md`](../skill/generate_course/SKILL.md) décrit à Claude comment
-écrire un cours complet avec coursekit. Pour l’installer dans Claude Code, copier le dossier
-dans les skills de l’utilisateur ou du projet :
-
-```bash
-mkdir -p ~/.claude/skills
-cp -R skill/generate_course ~/.claude/skills/
-```
-
-Puis, dans une session ouverte sur le dépôt coursekit : `/generate_course comment fonctionne
-une fusée`. Voir [skill/README.md](../skill/README.md).
 
 ## Versions
 
