@@ -9,6 +9,12 @@ dit rien de faux.
 Le dépôt contient la bibliothèque, trois cours d’exemple et une skill pour Claude Code,
 `/generate_course`, qui écrit un cours complet à partir d’un sujet.
 
+Deux des cours d’exemple sont en ligne et peuvent être suivis sans rien installer :
+
+- [Comment fonctionne une fusée](https://cute-sherbet-6a072d.netlify.app/)
+- [Comment une épidémie se propage](https://fluffy-cupcake-34e88b.netlify.app/), écrit avec
+  `/generate_course`
+
 Ce README a deux parties :
 
 - [**Partie 1 : créer un cours avec Claude**](#partie-1--créer-un-cours-avec-claude), pour
@@ -50,7 +56,10 @@ nouveau après chaque mise à jour du projet ou création d’un cours.
 
 ## 3. Regarder un cours d’exemple
 
-Avant d’en créer un, il est utile de voir à quoi ressemble un cours terminé :
+Avant d’en créer un, il est utile de voir à quoi ressemble un cours terminé. Le plus simple est
+d’ouvrir une des versions en ligne : [la fusée](https://cute-sherbet-6a072d.netlify.app/) ou
+[l’épidémie](https://fluffy-cupcake-34e88b.netlify.app/). On peut aussi lancer un cours sur sa
+machine :
 
 ```bash
 npm run dev:fusee
@@ -142,6 +151,8 @@ n’importe quel dossier. Deux possibilités simples :
 - **Un hébergement existant** (site d’un établissement, hébergement personnel) : copier le
   contenu de `dist` dans un dossier du site, par exemple avec un logiciel FTP. Le cours est
   alors à l’adresse de ce dossier.
+
+Les deux cours d’exemple en ligne ont été déposés sur Netlify de cette façon.
 
 Pour mettre en ligne une nouvelle version du cours, relancer `npm run build` et déposer à
 nouveau le dossier `dist`.
