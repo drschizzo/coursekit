@@ -200,7 +200,7 @@ export class Panel {
       const l = h('span');
       l.style.left = `${(m.t0 / tl.duration) * 100}%`;
       l.style.width = `${((m.t1 - m.t0) / tl.duration) * 100}%`;
-      l.textContent = m.kind === 'bonus' ? L.bonus : m.kind === 'exam' ? L.exam : String(i);
+      l.textContent = m.kind === 'bonus' ? L.bonus : m.kind === 'exam' ? L.exam : String(tl.modules.slice(0, i + 1).filter((k) => k.kind === 'core').length);
       l.title = `${x.moduleLabel(i)} · ${m.title}`;
       mods.append(l);
     });

@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "check:demo": "node packages/tooling/src/cli.ts check courses/demo-mini/src/course.ts",
     "check:fusee": "node packages/tooling/src/cli.ts check courses/fusee/src/course.ts",
-    "test": "node packages/tooling/test/run.ts && node packages/tooling/src/cli.ts check courses/demo-mini/src/course.ts"
+    "test": "node packages/tooling/test/run.ts && npm run check:demo && npm run check:fusee"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

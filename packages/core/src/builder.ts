@@ -234,7 +234,7 @@ export function compile(course: CourseDef): Timeline {
     },
 
     clinicCase(k) {
-      c.chapter(`${k.exam ? L.examCase : L.clinicCase} ${k.title}`, () => {
+      c.chapter(`${k.exam ? L.examCase : L.clinicCase} : ${k.title}`, () => {
         c.stage(k.scene, k.fault);
         if (k.diagram) c.diagram(k.diagram);
         c.step(L.clinicObserve, k.observe, { note: L.clinicObserveNote });

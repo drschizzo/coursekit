@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "demo-mini", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "-w", "courses/demo-mini"], "port": 5181 },
+    { "name": "fusee", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev", "-w", "courses/fusee"], "port": 5182 }
+  ]
+}

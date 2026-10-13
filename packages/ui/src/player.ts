@@ -56,7 +56,8 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
     if (!m) return '';
     if (m.kind === 'bonus') return L.bonus;
     if (m.kind === 'exam') return L.exam;
-    return `${L.module} ${i}`;
+    // core modules are numbered from 1, the exam and bonus modules apart
+    return `${L.module} ${course.modules.slice(0, i + 1).filter((x) => (x.kind ?? 'core') === 'core').length}`;
   };
   const diagrams: Record<string, (ctx: CanvasRenderingContext2D, e: DiagramEnv) => void> = { ...TOOL_DIAGRAMS, ...(course.diagrams ?? {}) };
   const draw = (name: string, ctx: CanvasRenderingContext2D, env: DiagramEnv) => {
