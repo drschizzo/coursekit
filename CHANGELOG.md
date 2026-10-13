@@ -1,6 +1,8 @@
 # Historique des versions
 
-## 0.1.0 — première diffusion restreinte
+## 0.1.0 — première version
+
+Publication sur GitHub sous licence MIT.
 
 ### Bibliothèque
 

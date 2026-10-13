@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Le vérificateur de contenu, le réglage du modèle et la commande coursekit.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.18"

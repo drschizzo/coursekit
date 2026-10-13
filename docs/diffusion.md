@@ -1,17 +1,14 @@
 # Diffusion
 
-coursekit est diffusé **de manière restreinte** : aux personnes à qui l’accès est donné, sans
-publication sur un registre npm public. Les paquets sont marqués `"private": true` : `npm
-publish` les refuse, ce qui évite une publication par erreur. Les conditions d’utilisation sont
-dans [LICENSE](../LICENSE).
+coursekit est distribué sous licence MIT (voir [LICENSE](../LICENSE)), depuis son dépôt
+GitHub. Les paquets ne sont pas publiés sur npm : ils sont marqués `"private": true`, ce qui
+évite une publication par erreur, et s’utilisent depuis le dépôt.
 
 ## Obtenir coursekit
 
-Deux façons, au choix de la personne qui diffuse :
-
-- **Un accès au dépôt Git privé.** `git clone <adresse du dépôt>`, puis `npm install`.
+- **Depuis GitHub.** `git clone https://github.com/drschizzo/coursekit.git`, puis `npm install`.
 - **Une archive.** `npm run archive` produit `coursekit-<version>.tar.gz` à partir du dernier
-  commit (les fichiers non commités n’y sont pas). L’archive se transmet par un canal privé.
+  commit (les fichiers non commités n’y sont pas), pour une copie sans l’historique Git.
 
 Prérequis : Node 22.18 ou plus récent (voir `.nvmrc`) et npm 10 ou plus récent. Aucune
 compilation : Node et Vite exécutent directement les sources TypeScript.
@@ -76,9 +73,8 @@ relatifs : il se dépose sur n’importe quel hébergement statique, dans n’im
 Aucun serveur n’est nécessaire. La progression de chaque élève reste dans son navigateur
 (`localStorage`) ; il peut l’exporter en JSON depuis la page d’accueil.
 
-Le cours publié contient le code de la bibliothèque. Diffuser un cours à des élèves est
-l’usage prévu de coursekit ; diffuser la bibliothèque elle-même suit les conditions de
-[LICENSE](../LICENSE).
+Le cours publié contient le code de la bibliothèque. La licence MIT demande seulement de
+garder la mention de copyright et le texte de la licence dans les copies du code de coursekit.
 
 ## Versions
 

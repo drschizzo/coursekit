@@ -40,7 +40,7 @@ reconnue.
 ## 2. Récupérer le projet
 
 ```bash
-git clone <adresse du dépôt> coursekit
+git clone https://github.com/drschizzo/coursekit.git
 cd coursekit
 npm install
 ```
@@ -150,8 +150,9 @@ La progression de chaque élève est enregistrée dans son propre navigateur : r
 un serveur, et un élève qui change d’appareil ou de navigateur repart du début. La page
 d’accueil permet à l’élève d’exporter sa progression dans un fichier.
 
-Les cours créés peuvent être diffusés librement à leurs élèves ; le projet coursekit lui-même
-ne peut pas être redistribué (voir [LICENSE](LICENSE)).
+Les cours créés peuvent être diffusés librement. coursekit est sous licence MIT (voir
+[LICENSE](LICENSE)) : la seule condition est de garder la mention de copyright et le texte de
+la licence dans les copies du code de coursekit.
 
 ## En cas de problème
 
@@ -299,6 +300,6 @@ Les conventions sont dans [CONTRIBUTING.md](CONTRIBUTING.md). Les points princip
 
 ## Statut
 
-Version 0.1.0, diffusion restreinte. Les paquets sont marqués `private` : ils ne sont pas publiés
-sur npm et ne peuvent pas l’être par erreur. Voir [LICENSE](LICENSE) et
-[docs/diffusion.md](docs/diffusion.md).
+Version 0.1.0, sous licence MIT (voir [LICENSE](LICENSE)). Les paquets ne sont pas publiés sur
+npm : ils sont marqués `private` et s’utilisent depuis le dépôt (voir
+[docs/diffusion.md](docs/diffusion.md)).

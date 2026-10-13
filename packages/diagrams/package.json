@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Primitives de dessin des schémas, cache, fiches de la boîte à outils et leurs schémas.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.18"

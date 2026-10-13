@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Le lecteur : mountCourse, les scènes fournies, le thème.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.18"

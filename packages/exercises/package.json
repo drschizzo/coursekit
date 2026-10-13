@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Les types d'exercices de l'atelier et leur vérification. Sans DOM.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.18"

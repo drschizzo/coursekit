@@ -1,21 +1,21 @@
-coursekit — licence d'utilisation restreinte
+MIT License
 
-Copyright (c) 2026 Henri Casselle. Tous droits réservés.
+Copyright (c) 2026 Henri Casselle
 
-Ce logiciel (le code source, la documentation, les cours d'exemple et la skill
-qui l'accompagnent) n'est pas un logiciel libre et n'est pas publié.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-1. Utilisation. Les personnes à qui le titulaire des droits a donné accès au
-   logiciel peuvent l'utiliser, le modifier et s'en servir pour créer des cours.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-2. Cours créés. Les cours construits avec le logiciel (y compris le code de la
-   bibliothèque qu'ils contiennent une fois compilés) peuvent être mis à la
-   disposition de leurs élèves ou lecteurs.
-
-3. Diffusion. Le logiciel lui-même, modifié ou non, ne peut pas être
-   redistribué, publié (notamment sur un registre de paquets public) ni
-   sous-licencié sans l'accord écrit du titulaire des droits.
-
-4. Garantie. Le logiciel est fourni « en l'état », sans garantie d'aucune
-   sorte. Le titulaire des droits ne peut être tenu responsable d'aucun
-   dommage résultant de son utilisation.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

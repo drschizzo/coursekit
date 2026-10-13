@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Bibliothèque pour écrire des cours interactifs pilotés par un modèle exécutable du sujet.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22.18"
