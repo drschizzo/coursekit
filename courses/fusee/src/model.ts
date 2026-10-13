@@ -8,7 +8,7 @@
 // Diagrams, stages, experiments, exercises and the figures of the text all
 // run this file: nothing in the course is drawn « by hand ».
 
-import type { DomainModel } from '@coursekit/core';
+import { memo, type DomainModel } from '@coursekit/core';
 
 // ------------------------------------------------------------- constants
 
@@ -251,18 +251,15 @@ export const rocketOf = (v: Record<string, number>): Rocket => {
   return { ...base, payload: v.payload ?? LAUNCHER.payload };
 };
 
-/** The flight the live values describe, cached by its parameters. */
-const flights = new Map<string, Flight>();
-export function flightOf(v: Record<string, number>): Flight {
-  const key = [v.payload ?? 3000, v.single ?? 0, v.kick ?? FLIGHT.kick, v.thrust ?? 1, v.drag ?? 1].join('|');
-  let f = flights.get(key);
-  if (!f) {
-    f = fly({ rocket: rocketOf(v), kick: v.kick ?? FLIGHT.kick, thrustScale: v.thrust ?? 1, drag: (v.drag ?? 1) > 0.5 });
-    if (flights.size > 64) flights.delete(flights.keys().next().value as string);
-    flights.set(key, f);
-  }
-  return f;
-}
+/**
+ * The flight the live values describe. The stage, the diagrams and the goals
+ * of the experiments all ask for it every frame: it is computed once per set
+ * of parameters.
+ */
+export const flightOf = memo(
+  (v: Record<string, number>): Flight => fly({ rocket: rocketOf(v), kick: v.kick ?? FLIGHT.kick, thrustScale: v.thrust ?? 1, drag: (v.drag ?? 1) > 0.5 }),
+  { key: (v) => [v.payload ?? LAUNCHER.payload, v.single ?? 0, v.kick ?? FLIGHT.kick, v.thrust ?? 1, v.drag ?? 1].join('|') },
+);
 
 /** Words for an outcome. */
 export const OUTCOME: Record<Outcome, string> = {

@@ -159,8 +159,11 @@ export interface StepOptions {
   claims?: Claim[];
 }
 
-/** A figure stated in a step, checked by running the course's model. */
-export interface Claim { text: string; check(model: unknown): boolean | string }
+/**
+ * A figure stated in a step, checked by running the course's model: `check`
+ * returns true, or false / a message saying what the model found instead.
+ */
+export interface Claim { text: string; check(): boolean | string }
 
 // ---------------------------------------------------------------- the stage
 
@@ -169,8 +172,16 @@ export interface Claim { text: string; check(model: unknown): boolean | string }
  * The player calls `show` when the scene changes and `update` when its
  * settings change.
  */
+/** A rectangle in CSS pixels, relative to the stage. */
+export interface Rect { x: number; y: number; w: number; h: number }
+
 export interface Stage {
   mount(el: HTMLElement): void;
+  /**
+   * The safe area: the part of the stage no panel covers. The player calls
+   * it when the layout changes. Keep the action (and any read-out) inside.
+   */
+  layout?(safe: Rect): void;
   show(scene: string, settings: Vals): void | Promise<void>;
   update(settings: Vals): void;
   status(): { busy: boolean; label: string; progress?: number };

@@ -4,18 +4,16 @@
 // staging, orbits, the atmosphere and the gravity turn. The figures of the
 // text, the diagrams, the stage and the exercises all run ./model.ts.
 
-import { choice, defineCourse, numeric, type Capsule } from '@coursekit/core';
+import { choice, dec, defineCourse, fr, numeric, pct, type Capsule } from '@coursekit/core';
 import { pickCapsules } from '@coursekit/diagrams';
 import { choiceQ, type Exercise, type WorkshopConfig } from '@coursekit/exercises';
-import { DIAGRAMS, fr } from './diagrams.ts';
+import { DIAGRAMS } from './diagrams.ts';
 import {
   FLIGHT, G0, LAUNCHER, OUTCOME, flightOf, gravity, liftoffMass, model, orbitalSpeed, singleStage, stageDeltaV,
   tsiolkovsky, verticalFlight, type Stage,
 } from './model.ts';
 
 const int = (v: number) => fr(v);
-const dec = (n: number) => (v: number) => fr(v, n);
-const pct = (v: number) => `${Math.round(v * 100)} %`;
 const sum = (a: number[]) => a.reduce((s, x) => s + x, 0);
 const near = (a: number, b: number, rel = 0.03) => Math.abs(a - b) <= Math.abs(b) * rel;
 

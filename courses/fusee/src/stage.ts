@@ -4,7 +4,7 @@
 
 import { canvasStage } from '@coursekit/ui';
 import { OUTCOME, R_EARTH, coast, flightOf, type Flight, type Sample } from './model.ts';
-import { fr } from './diagrams.ts';
+import { fr } from '@coursekit/core';
 
 interface Prepared { f: Flight; tail: { x: number; y: number }[] }
 
@@ -58,45 +58,50 @@ export const stage = () => canvasStage({
   pad: {
     label: 'Le décollage, vu de près',
     prepare,
-    draw(ctx, w, h, t, _s, data) {
+    draw(ctx, w, h, t, _s, data, safe) {
       const { f } = data as Prepared;
       // the first 40 s, played at real speed, then again
       const T = f.outcome === 'pad' ? 6 : 40;
       const tt = t % (T + 2);
       const s = at(f, Math.min(tt, T));
-      const ground = h - 70;
+      // the ground at the bottom of the safe area: the rocket stands clear of the panels
+      const ground = safe.y + safe.h - 10;
       const sky = ctx.createLinearGradient(0, 0, 0, ground);
       sky.addColorStop(0, '#0b0f1a'); sky.addColorStop(1, '#1b2740');
       ctx.fillStyle = sky; ctx.fillRect(0, 0, w, ground);
       ctx.fillStyle = '#1d212b'; ctx.fillRect(0, ground, w, h - ground);
       // the view follows the rocket: 1 px per metre near the ground, then wider
       const scale = Math.max(0.02, Math.min(1, 300 / Math.max(1, s.alt)));
-      const cx = w * 0.6;
-      const y = ground - Math.min(ground - 160, s.alt * scale);
+      const cx = safe.x + safe.w * 0.62;
+      // the rocket climbs to just under the read-out, then the view follows it
+      const y = ground - Math.min(ground - (safe.y + 230), s.alt * scale);
       // altitude marks
       ctx.fillStyle = 'rgba(230,234,245,.35)'; ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'right';
       for (const m of [100, 500, 1000, 2000, 5000, 10000]) {
         const ym = ground - m * scale;
-        if (ym > 60 && ym < ground - 10) { ctx.fillRect(cx - 160, ym, 30, 1); ctx.fillText(`${fr(m)} m`, cx - 166, ym + 4); }
+        if (ym > safe.y + 110 && ym < ground - 10) { ctx.fillRect(cx - 120, ym, 30, 1); ctx.fillText(`${fr(m)} m`, cx - 126, ym + 4); }
       }
       // tower
       ctx.fillStyle = '#2a2f3c'; ctx.fillRect(cx - 70, ground - 150 * Math.min(1, scale * 1.2), 18, 150 * Math.min(1, scale * 1.2));
       drawRocket(ctx, cx, y, 120, 0, s.burning && (f.outcome !== 'pad' || tt < T), 0);
-      hud(ctx, 24, 104, s, f);
+      hud(ctx, safe.x + 12, safe.y + 16, s, f);
     },
   },
   flight: {
     label: 'Le vol complet, au-dessus de la Terre',
     prepare,
-    draw(ctx, w, h, t, _s, data) {
+    draw(ctx, w, h, t, _s, data, safe) {
       const { f, tail } = data as Prepared;
       ctx.fillStyle = '#0b0f1a'; ctx.fillRect(0, 0, w, h);
-      // the view: the launch site right of the text panel, a few thousand km of ground
+      // the view: the launch site at the left of the safe area, a few
+      // thousand km of ground to the right (the trajectory passes above the
+      // diagram); altitudes are exaggerated so that 250 km fill most of the
+      // safe area's height
       const span = 3600e3;
-      const k = (w * 0.55) / span;
-      const ox = w * 0.4, oy = h * 0.5;
-      // world (x, y) from the Earth's centre → screen, the site at (ox, oy)
-      // ground: the curve of the Earth; altitudes are exaggerated × 6 for legibility
+      const ox = safe.x + safe.w * 0.08, oy = safe.y + safe.h * 0.8;
+      const k = Math.max(1e-6, (w - ox - 16) / span);
+      const ky = (oy - safe.y - 110) / 250e3;
+      // the ground: the curve of the Earth, at the horizontal scale
       ctx.fillStyle = '#16233a';
       ctx.beginPath(); ctx.moveTo(0, h);
       for (let px = 0; px <= w; px += 8) {
@@ -110,7 +115,7 @@ export const stage = () => canvasStage({
       for (let px = 0; px <= w; px += 8) {
         const x = (px - ox) / k;
         const drop = R_EARTH - Math.sqrt(Math.max(0, R_EARTH * R_EARTH - x * x));
-        const yy = oy + drop * k - 100e3 * k * 6;
+        const yy = oy + drop * k - 100e3 * ky;
         px ? ctx.lineTo(px, yy) : ctx.moveTo(px, yy);
       }
       ctx.stroke(); ctx.setLineDash([]);
@@ -119,7 +124,7 @@ export const stage = () => canvasStage({
         const ang = Math.atan2(x, y), alt = Math.hypot(x, y) - R_EARTH;
         const gx = ang * R_EARTH;
         const drop = R_EARTH - Math.sqrt(Math.max(0, R_EARTH * R_EARTH - gx * gx));
-        return [ox + gx * k, oy + drop * k - alt * k * 6] as const;
+        return [ox + gx * k, oy + drop * k - alt * ky] as const;
       };
       // played at 15× real time, then the coast, then again
       const T = f.samples[f.samples.length - 1].t;
@@ -157,8 +162,8 @@ export const stage = () => canvasStage({
         ctx.fillStyle = 'rgba(230,234,245,.5)'; ctx.fillText(ev.label, ex + 6, ey + 14);
       }
       ctx.fillStyle = 'rgba(230,234,245,.35)'; ctx.font = '11px Inter, sans-serif';
-      ctx.fillText('altitudes exagérées six fois · vol accéléré quinze fois', 16, h - 16);
-      hud(ctx, 24, 104, s, f);
+      ctx.fillText(`altitudes exagérées ${fr(ky / k)} fois · vol accéléré quinze fois`, safe.x + 12, safe.y + safe.h - 6);
+      hud(ctx, safe.x + 12, safe.y + 16, s, f);
     },
   },
 });

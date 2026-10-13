@@ -99,6 +99,9 @@ export class Panel {
   private quizKey: ((i: number) => void) | null = null;
   private hud: ((v: Vals) => string) | null = null;
 
+  private tops: HTMLElement[] = [];
+  private barEl!: HTMLElement;
+
   constructor(tl: Timeline, hooks: PanelHooks, x: PanelContext) {
     this.tl = tl; this.hooks = hooks; this.x = x;
     const L = x.labels;
@@ -182,6 +185,8 @@ export class Panel {
     this.tip = h('div', 'c-tip hidden');
 
     this.root.append(top, actions, this.cap, this.diagEl, bar, this.badge, this.viewEl, this.tip);
+    this.tops = [top, actions, this.badge];
+    this.barEl = bar;
 
     // one segment per chapter
     tl.chapters.forEach((ch, i) => {
@@ -284,6 +289,21 @@ export class Panel {
     this.viewEl.classList.toggle('free', free);
     this.viewEl.textContent = free ? '⟲ Revenir à la vue de départ' : '';
     this.viewEl.disabled = !free;
+  }
+
+  /**
+   * Where the panels sit, in viewport pixels: the bars along the top, the
+   * text panel, the diagram (its place is kept even when hidden, so that the
+   * safe area does not move between steps) and the timeline at the bottom.
+   */
+  regions(): { tops: DOMRect[]; cap: DOMRect; diag: DOMRect; bar: DOMRect } {
+    const vis = (e: HTMLElement) => e.offsetParent !== null;
+    return {
+      tops: this.tops.filter(vis).map((e) => e.getBoundingClientRect()),
+      cap: this.cap.getBoundingClientRect(),
+      diag: this.diagEl.getBoundingClientRect(),
+      bar: this.barEl.getBoundingClientRect(),
+    };
   }
 
   setBadge(txt: string, cls = ''): void {

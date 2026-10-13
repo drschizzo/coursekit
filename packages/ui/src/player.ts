@@ -6,8 +6,8 @@
 // by the Stage interface.
 
 import {
-  Progress, browserStore, compile, createGlossary, labelsFor,
-  type CourseDef, type DiagramEnv, type ProgressStore, type Stage, type Stop, type Vals,
+  Progress, browserStore, compile, createGlossary, diagramVariants, labelsFor,
+  type CourseDef, type DiagramEnv, type ProgressStore, type Rect, type Stage, type Stop, type Vals,
 } from '@coursekit/core';
 import { CC, DH, DW, TOOL_DIAGRAMS, beginBudget, text } from '@coursekit/diagrams';
 import type { Exercise, WorkshopConfig } from '@coursekit/exercises';
@@ -23,6 +23,8 @@ export interface MountOptions {
   store?: ProgressStore;
   /** open the course directly instead of the home page */
   autostart?: boolean;
+  /** development: `?shots` in the URL opens the grid of every diagram variant */
+  dev?: boolean;
 }
 
 /** The clock stops this far before the next step, so that its text is not shown early. */
@@ -36,6 +38,14 @@ export interface CourseHandle {
   prev(): void;
   chapter(i: number): void;
   list(): string;
+  /** test helpers: jump to a step of a chapter; the pauses before it count as done */
+  goto(chapter: number, step?: number): void;
+  /** turn the pauses (questions, experiments…) on or off, like the reader's button */
+  pauses(on: boolean): void;
+  /** a diagram drawn alone, with the course's defaults patched by `v` */
+  render(name: string, v?: Vals, t?: number, arg?: string): HTMLCanvasElement;
+  /** every diagram, with the values of the reading and at the bounds of its experiments' controls */
+  shots(): void;
   destroy(): void;
 }
 
@@ -156,6 +166,7 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
     if (!key) return;
     if (force || key !== curScene) {
       curScene = key;
+      syncLayout(true);
       lastStage = sig(vals);
       void stage.show(key, vals);
       panel.setViewFree(false);
@@ -167,6 +178,40 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
       clearTimeout(stageTimer);
       stageTimer = window.setTimeout(() => stage.update(vals), 140);
     }
+  }
+
+  // ------------------------------------------------------------ safe area
+
+  /**
+   * The part of the stage no panel covers. On a wide screen, the column
+   * between the text panel (left) and the diagram (right), under the top bars
+   * and above the timeline: it does not move when the text grows or the
+   * diagram hides. On a narrow screen (a column under 180 px), the band
+   * above the panels.
+   */
+  function safeArea(): Rect {
+    const S = stageEl.getBoundingClientRect();
+    if (!S.width || mode !== 'tour') return { x: 0, y: 0, w: S.width, h: S.height };
+    const r = panel.regions();
+    const top = Math.max(S.top, ...r.tops.map((b) => b.bottom)) + 8;
+    const bottom = Math.min(S.bottom, r.bar.height ? r.bar.top : S.bottom) - 8;
+    const left = r.cap.width ? r.cap.right + 12 : S.left;
+    const right = r.diag.width ? r.diag.left - 12 : S.right;
+    if (right - left >= Math.min(180, 0.3 * S.width)) return { x: left - S.left, y: top - S.top, w: right - left, h: bottom - top };
+    // the text panel grows with its text: use a fixed share of the height, not its top
+    const low = Math.min(S.top + S.height * 0.45, r.diag.height ? r.diag.top - 8 : bottom);
+    return { x: 8, y: top - S.top, w: S.width - 16, h: Math.max(80, low - top) };
+  }
+  let lastSafe: Rect | null = null;
+  let safeCheck = 0;
+  function syncLayout(force = false): void {
+    if (!stage.layout) return;
+    const now = performance.now();
+    if (!force && now - safeCheck < 250) return;
+    safeCheck = now;
+    const a = safeArea();
+    const moved = !lastSafe || Math.abs(a.x - lastSafe.x) + Math.abs(a.y - lastSafe.y) + Math.abs(a.w - lastSafe.w) + Math.abs(a.h - lastSafe.h) > 4;
+    if (moved) { lastSafe = a; stage.layout(a); }
   }
 
   // ------------------------------------------------------------ navigation
@@ -342,6 +387,7 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
     }
     if (tl.stop || tl.held) tl.extra += dt;
     prog.setT(tl.t);
+    syncLayout();
     syncStage();
     panel.update(tl.t, tl.eval(tl.t), tl.playing);
     const s = stage.status();
@@ -385,11 +431,61 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
   rafId = requestAnimationFrame(frame);
   if (opts.autostart) startTour(prog.d.lastT || 0); else home.openHome(false);
 
+  // ------------------------------------------------------------ test helpers
+
+  function render(name: string, v: Vals = {}, t = 2, arg?: string): HTMLCanvasElement {
+    const cv = document.createElement('canvas');
+    const k = 2;
+    cv.width = DW * k; cv.height = DH * k;
+    cv.style.width = `${DW}px`;
+    const ctx = cv.getContext('2d')!;
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    draw(name, ctx, { t, v: { ...(course.defaults ?? {}), ...v }, ptr: null, hits: new Set(), arg });
+    return cv;
+  }
+
+  function shots(): void {
+    withOverlay((done) => {
+      const box = document.createElement('div');
+      box.className = 'ck-shots';
+      const head = document.createElement('div');
+      head.className = 'ck-shots-head';
+      const variants = diagramVariants(tl);
+      head.textContent = `${variants.length} schémas · valeurs du fil du cours et bornes des expériences · Échap pour fermer`;
+      box.append(head);
+      for (const d of variants) {
+        const fig = document.createElement('figure');
+        const cap = document.createElement('figcaption');
+        cap.textContent = `${d.name} — ${d.label}`;
+        fig.append(render(d.name, d.v, 3.7, d.arg), cap);
+        box.append(fig);
+      }
+      const close = (ev: KeyboardEvent) => { if (ev.key === 'Escape') { window.removeEventListener('keydown', close, true); box.remove(); done(); } };
+      window.addEventListener('keydown', close, true);
+      root.append(box);
+    });
+  }
+
+  function gotoStep(chapter: number, step = 0): void {
+    const ch = tl.chapters[chapter];
+    if (!ch) return;
+    const end = chapter + 1 < tl.chapters.length ? tl.chapters[chapter + 1].t : tl.duration;
+    const caps = tl.caps.filter((c) => c.t >= ch.t - 1e-3 && c.t < end - 1e-3);
+    const t = (caps[Math.min(step, caps.length - 1)]?.t ?? ch.t) + 0.01;
+    home.closeHome(); home.hideCard();
+    if (mode !== 'tour') startTour(t); else seek(t);
+    for (const st of tl.stops) if (st.t < t) st.visited = true;
+  }
+
   const handle: CourseHandle = {
     tl, prog, next, prev,
-    chapter: (i) => { home.closeHome(); home.hideCard(); if (mode !== 'tour') startTour(tl.chapters[i].t + 0.01); else seek(tl.chapters[i].t + 0.01); },
+    chapter: (i) => gotoStep(i, 0),
     list: () => tl.chapters.map((c, i) => `${i}  M${c.module} · ${c.part} · ${c.title}`).join('\n'),
+    goto: gotoStep,
+    pauses: (on) => { tl.pauses = on; panel.setPauses(on); if (!on && tl.stop && tl.stop.kind !== 'card' && tl.stop.kind !== 'test') tl.resume(); },
+    render, shots,
     destroy: () => { cancelAnimationFrame(rafId); window.removeEventListener('keydown', onKey, true); stage.dispose(); host.replaceChildren(); },
   };
+  if (opts.dev && new URLSearchParams(location.search).has('shots')) shots();
   return handle;
 }

@@ -5,7 +5,7 @@
 //
 // Taken from avbd's course/tour.ts, with the content moved out.
 
-import type { Control, Goal, Predict, QuizSpec, Vals } from './types.ts';
+import type { Claim, Control, Goal, Predict, QuizSpec, Vals } from './types.ts';
 
 export interface Caption {
   t: number;
@@ -19,7 +19,7 @@ export interface Caption {
   tools: string[];
   /** seconds this step animates before the clock waits */
   dwell: number;
-  claims: { text: string; check(model: unknown): boolean | string }[];
+  claims: Claim[];
 }
 
 export interface DiagSpec { t0: number; t1: number; name: string; arg?: string; big?: boolean }

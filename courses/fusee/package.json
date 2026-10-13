@@ -2,7 +2,19 @@
   "name": "course-fusee",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "vite --port 5182 --strictPort", "build": "vite build", "check": "node ../../packages/tooling/src/cli.ts check src/course.ts" },
-  "dependencies": { "@coursekit/core": "*", "@coursekit/ui": "*", "@coursekit/diagrams": "*", "@coursekit/exercises": "*" },
-  "devDependencies": { "@coursekit/tooling": "*" }
+  "scripts": {
+    "dev": "vite --port 5182 --strictPort",
+    "build": "vite build",
+    "check": "node ../../packages/tooling/src/cli.ts check src/course.ts",
+    "tune": "node ../../packages/tooling/src/cli.ts tune src/tune.ts"
+  },
+  "dependencies": {
+    "@coursekit/core": "*",
+    "@coursekit/ui": "*",
+    "@coursekit/diagrams": "*",
+    "@coursekit/exercises": "*"
+  },
+  "devDependencies": {
+    "@coursekit/tooling": "*"
+  }
 }

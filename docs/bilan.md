@@ -66,6 +66,22 @@ guidé, PRIMM, Parsons).
 
 Aucune de ces propositions ne casse le format des cours existants.
 
+### Propositions appliquées
+
+| Proposition | Ce qui a été fait |
+|---|---|
+| Nombres en français | `fr(x, n)`, `fmtNumber(x, n, langue)`, `dec(n)` et `pct` dans `@coursekit/core` ; le cours fusée n’a plus son propre formateur. |
+| Zone utile de la scène | `Stage.layout(safe)` : le lecteur calcule la zone libre (la colonne entre le panneau de texte et le schéma, sous les barres, au-dessus de la frise ; sur écran étroit, une bande en haut) et la transmet. `canvasStage` la passe à `draw(…, safe)`. La scène fusée s’y place entièrement. |
+| Variantes de schémas | `diagramVariants(tl)` (core) liste chaque schéma avec les valeurs du fil du cours et chaque contrôle d’expérience à ses bornes. Le parcours du vérificateur les dessine toutes, enregistre les textes tracés et signale : texte non numérique (erreur), texte hors du cadre ou textes superposés (remarque `layout`). Les objectifs des expériences sont aussi évalués aux bornes. Sur le cours fusée, ce contrôle a trouvé 8 débordements, corrigés. |
+| Relecture visuelle | Au lieu d’un navigateur sans tête (une dépendance lourde) : `handle.shots()` et l’adresse `?shots` en développement ouvrent la grille de toutes les variantes, légendées. |
+| Mode test du lecteur | `handle.goto(chapitre, étape)` (les pauses précédentes comptent comme faites), `handle.pauses(false)`, `handle.render(schéma, valeurs)`. |
+| `Claim.check()` | Sans paramètre. |
+| Mémoïsation | `memo(fn, { key, max })` dans core, documenté face à `cached` / `cachedMaybe` ; `flightOf` l’utilise. |
+| Script de réglage | `coursekit tune <tune.ts>` et `defineTune({ grid, run, show, expect })` : une liste pour un paramètre, un tableau pour deux, puis les fenêtres attendues (code de sortie 1 si l’une échoue). `courses/fusee/src/tune.ts` vérifie les fenêtres utilisées par le cours ; `npm test` le lance. Le premier passage a montré que 4,5° mène déjà en orbite. |
+
+Corrigé au passage : le gabarit de `coursekit new` ne passait pas son propre vérificateur (bonne
+réponse trop longue) ; il contient maintenant aussi `model.ts` et `tune.ts`.
+
 ## Conséquences pour la skill `/generate_course`
 
 La spécification est dans [`skill/generate_course/SKILL.md`](../skill/generate_course/SKILL.md).

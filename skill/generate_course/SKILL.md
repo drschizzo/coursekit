@@ -91,13 +91,17 @@ S’inspirer de `courses/fusee`, qui utilise tous les éléments du format.
    échantillons, des événements et une **issue** classée (`'orbit' | 'crash' | …`).
 2. Ajouter `model: DomainModel` avec des `checks` : une loi connue (cas limite exact), un ordre
    de grandeur réel, et **l’issue du réglage nominal**.
-3. Écrire un script de balayage dans le carnet de travail qui imprime l’issue pour une grille de
-   paramètres. Régler jusqu’à obtenir, pour chaque expérience et chaque cas clinique prévus :
+3. Écrire `src/tune.ts` avec `defineTune({ grid, run, show, expect })` et le lancer
+   (`npm run tune`, ou `node packages/tooling/src/cli.ts tune courses/<id>/src/tune.ts`). Il
+   imprime l’issue pour chaque combinaison (un tableau pour deux paramètres). Régler jusqu’à
+   obtenir, pour chaque expérience et chaque cas clinique prévus :
    - une **fenêtre de réussite** nette et assez large pour être trouvée au curseur ;
    - un échec distinct de chaque côté (trop peu / trop), avec un symptôme visible ;
    - pour chaque cas clinique, un réglage fautif dont le symptôme ne se confond pas avec celui
      d’un autre réglage.
-4. Ajouter une `check` pour chaque fenêtre utilisée par le contenu.
+4. Écrire chaque fenêtre dans `expect` du fichier de réglage, et ajouter une `check` du modèle
+   pour l’issue nominale. Ajouter `tune:<id>` à `npm test`.
+5. Envelopper la simulation partagée par la scène et les schémas dans `memo(...)`.
 
 Ne pas passer à l’étape 5 tant que le balayage ne donne pas ces fenêtres.
 
@@ -106,11 +110,12 @@ Ne pas passer à l’étape 5 tant que le balayage ne donne pas ces fenêtres.
 - **Un schéma par idée**, dessiné dans l’espace `DW × DH` (380 × 236) avec les primitives de
   `@coursekit/diagrams` et la palette `CC` (orange : ce qu’on explique ; bleu : la référence ;
   rose : forces ; vert : réussi ; rouge : échec). Chaque schéma lit `e.v` et appelle le modèle ;
-  aucun chiffre écrit à la main. Les simulations coûteuses sont mises en cache dans le modèle.
+  aucun chiffre écrit à la main ; les nombres passent par `fr`, `dec`, `pct` de `@coursekit/core`.
 - Axes : pas de graduation sous le libellé de l’axe ; libellés courts.
-- **Scène** (`canvasStage`) : l’action dans le tiers haut et le centre ; le bas à gauche est
-  couvert par le panneau de texte, le bas à droite par le schéma. Afficher les grandeurs
-  (temps, altitude…) en haut à gauche, sous le badge de la scène.
+- **Scène** (`canvasStage`) : le fond peut couvrir tout le canevas, mais l’action et les
+  grandeurs affichées restent dans `safe`, le rectangle passé à `draw(ctx, w, h, t, réglages,
+  données, safe)` : la zone qu’aucun panneau ne couvre. Positionner tout en fonction de `safe`,
+  jamais de `w` et `h`.
 - `stageKeys` : les valeurs qui changent la scène ; les autres ne servent qu’aux schémas.
 
 ## 6. Écrire le contenu
@@ -146,14 +151,18 @@ Le contenu s’écrit dans l’ordre de lecture avec le constructeur (`c.module`
 
 ## 7. Vérifier
 
-1. `npx tsc --noEmit -p .` puis `node packages/tooling/src/cli.ts check courses/<id>/src/course.ts`.
-   Corriger jusqu’à « ✓ prêt ». Ne jamais affaiblir une règle du vérificateur pour passer.
+1. `npx tsc --noEmit -p .`, `npm run tune` puis
+   `node packages/tooling/src/cli.ts check courses/<id>/src/course.ts`. Corriger jusqu’à
+   « ✓ prêt (0 remarque) » : les remarques `layout` (texte hors du cadre, textes superposés,
+   trouvées en dessinant chaque schéma aux bornes des expériences) se corrigent aussi. Ne jamais
+   affaiblir une règle du vérificateur pour passer.
 2. Lancer le serveur de développement (onglet de terminal) et ouvrir le cours dans le navigateur
    intégré :
-   - parcourir chaque chapitre ; capturer la scène et le schéma ;
-   - dessiner chaque schéma aux bornes des contrôles de ses expériences (import dynamique de
-     `/src/diagrams.ts` dans la page, grille de canvas) et corriger chevauchements et valeurs
-     absurdes ;
+   - ouvrir `/?shots` : la grille de tous les schémas, aux valeurs du fil du cours et aux
+     bornes des expériences ; chercher les valeurs absurdes (le vérificateur ne lit pas le sens) ;
+   - parcourir chaque chapitre avec `window.course.goto(chapitre, étape)` (les pauses précédentes
+     comptent comme faites ; `window.course.pauses(false)` pour toutes les passer) ; capturer la
+     scène et le schéma, sur un écran large et un écran étroit ;
    - ouvrir l’atelier : faire chaque calcul guidé, la séquence PRIMM, le Parsons ;
    - vérifier la console : aucune erreur.
 3. Relire tous les textes une fois, à voix basse : ton, une idée par étape, termes définis.
@@ -174,5 +183,6 @@ côté).
 - [ ] Chaque module a une explication écrite.
 - [ ] Les cas cliniques ont un seul réglage fautif et un symptôme qui lui est propre.
 - [ ] Aucun chiffre écrit à la main dans les textes.
+- [ ] `coursekit tune` : toutes les fenêtres attendues vérifiées.
 - [ ] `coursekit check` : prêt, 0 remarque.
-- [ ] Schémas relus aux valeurs extrêmes ; scène hors des panneaux ; console sans erreur.
+- [ ] Grille `?shots` relue ; scène dans `safe` ; console sans erreur.

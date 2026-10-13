@@ -16,6 +16,18 @@ export default defineCourse({
     post: [{ id: 'p1', skill: 'x', q: choice('?', ['a', 'b'], '—') }],
   },
   exercises: [{ id: 'orphan', module: 'm1', title: 'jamais proposé', kind: 'sequence', items: ['a', 'b'], intro: '—', explain: '—', win: '—' } as any],
+  // a diagram whose labels leave the frame and overlap, and which prints NaN
+  // when its experiment's control reaches zero
+  diagrams: {
+    messy: (ctx: CanvasRenderingContext2D, e: { v: Record<string, number> }) => {
+      ctx.font = '11px sans-serif';
+      ctx.fillText('un libellé bien trop long pour tenir dans le cadre du schéma', 200, 20);
+      ctx.fillText('premier', 40, 100);
+      ctx.fillText('second', 42, 101);
+      ctx.fillText(`rapport ${(1 / e.v.k) * 0}`, 40, 200);
+    },
+  },
+  defaults: { k: 1 },
   model: { name: 'faux', checks: [{ name: 'toujours faux', run: () => 'échec voulu' }] },
   content(c) {
     c.module('m1');
@@ -29,6 +41,10 @@ export default defineCourse({
       c.exercise('inconnu', '—');
     });
     c.module('m2');
-    c.chapter('Deux', () => { c.step('Fin', 'Fin.'); });
+    c.chapter('Deux', () => {
+      c.diagram('messy');
+      c.step('Fin', 'Fin.');
+      c.experiment({ title: 'k', prompt: '—', controls: [{ type: 'range', key: 'k', label: 'k', min: 0, max: 2 }] });
+    });
   },
 });

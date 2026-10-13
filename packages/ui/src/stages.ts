@@ -2,7 +2,7 @@
 // ones (a three.js scene, an existing application) implement the same
 // interface on their side.
 
-import type { Stage, Vals } from '@coursekit/core';
+import type { Rect, Stage, Vals } from '@coursekit/core';
 
 /** No background: the panels float on a plain page. */
 export function noStage(): Stage {
@@ -30,8 +30,12 @@ export interface CanvasScene {
   label?: string;
   /** called when the scene is shown or its settings change: prepare (e.g. run a simulation) */
   prepare?(settings: Vals): unknown;
-  /** draws one frame; `data` is what prepare returned, `t` seconds since it was ready */
-  draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number, settings: Vals, data: unknown): void;
+  /**
+   * Draws one frame; `data` is what prepare returned, `t` seconds since it
+   * was ready. `safe` is the part of the canvas no panel covers: keep the
+   * action and the read-outs in it. The background may fill the whole canvas.
+   */
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number, settings: Vals, data: unknown, safe: Rect): void;
 }
 
 /**
@@ -47,6 +51,7 @@ export function canvasStage(scenes: Record<string, CanvasScene>): Stage {
   let t0 = performance.now();
   let raf = 0;
   let busy = false;
+  let safe: Rect | null = null;
 
   const prepare = () => {
     if (!scene) return;
@@ -62,7 +67,7 @@ export function canvasStage(scenes: Record<string, CanvasScene>): Stage {
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(hgt * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(hgt * dpr); }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, hgt);
-    scene.draw(ctx, w, hgt, (performance.now() - t0) / 1000, settings, data);
+    scene.draw(ctx, w, hgt, (performance.now() - t0) / 1000, settings, data, safe ?? { x: 0, y: 0, w, h: hgt });
   };
   return {
     mount(host) {
@@ -78,6 +83,7 @@ export function canvasStage(scenes: Record<string, CanvasScene>): Stage {
       prepare();
     },
     update(s) { settings = { ...s }; prepare(); },
+    layout(r) { safe = r; },
     status: () => ({ busy, label: scene?.label ?? '' }),
     dispose() { cancelAnimationFrame(raf); cv?.remove(); cv = null; },
   };

@@ -1,7 +1,7 @@
 // The rocket course's diagrams. Each one runs the model with the current
 // values: nothing is drawn from figures written by hand.
 
-import type { DiagramEnv } from '@coursekit/core';
+import { fr, type DiagramEnv } from '@coursekit/core';
 import { CC, DH, DW, alpha, arrow, axes, circle, clamp, dot, line, panel, text } from '@coursekit/diagrams';
 import {
   G0, GM, LAUNCHER, OUTCOME, R_EARTH, coast, flightOf, liftoffMass, orbitalSpeed, rho, rocketOf, singleStage,
@@ -10,12 +10,6 @@ import {
 
 type Ctx = CanvasRenderingContext2D;
 
-/** French number: n decimals, comma, thin spaces for thousands. */
-export const fr = (x: number, n = 0): string => {
-  const [i, d] = Math.abs(x).toFixed(n).split('.');
-  const s = i.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
-  return (x < 0 && Number(x.toFixed(n)) !== 0 ? '−' : '') + s + (d ? ',' + d : '');
-};
 
 /** A small rocket drawn at (x, y) (its base), pointing at angle `a` from vertical. */
 function rocketIcon(ctx: Ctx, x: number, y: number, h: number, a = 0, flame = 0): void {
@@ -129,7 +123,7 @@ function budget(ctx: Ctx, e: DiagramEnv): void {
   const two = stageDeltaV({ ...LAUNCHER, payload: pay });
   const one = stageDeltaV({ ...singleStage(LAUNCHER), payload: pay });
   const need = 7800, losses = 1600;
-  const x0 = 120, w = 230, KM = 11000;
+  const x0 = 120, w = 200, KM = 11500;
   const X = (dv: number) => x0 + (dv / KM) * w;
   const bar = (y: number, parts: { v: number; col: string; label: string }[], title: string) => {
     text(ctx, title, x0 - 8, y + 11, CC.fg, 10, 'right');
@@ -189,10 +183,10 @@ function cannon(ctx: Ctx, e: DiagramEnv): void {
   const vc = orbitalSpeed(200_000) / 1000;
   const last = path[path.length - 1];
   const fell = Math.hypot(last.x, last.y) < R_EARTH;
-  const x0 = 250;
+  const x0 = 232;
   text(ctx, 'tir horizontal à 200 km', x0, 28, CC.dim, 10);
   text(ctx, `vitesse ${fr(v0, 1)} km/s`, x0, 50, CC.fg, 12);
-  text(ctx, `orbite circulaire : ${fr(vc, 1)} km/s`, x0, 72, CC.blue, 10);
+  text(ctx, `orbite : ${fr(vc, 1)} km/s`, x0, 72, CC.blue, 10);
   text(ctx, `libération : ${fr(Math.sqrt(2) * vc, 1)} km/s`, x0, 88, CC.dim, 10);
   const verdict = fell ? 'retombe sur la Terre' : v0 >= Math.sqrt(2) * vc ? 's’éloigne sans revenir' : Math.abs(v0 - vc) < 0.15 ? 'orbite presque circulaire' : 'orbite en ellipse';
   text(ctx, verdict, x0, 118, fell ? CC.red : CC.green, 11);
@@ -258,7 +252,7 @@ function losses(ctx: Ctx, e: DiagramEnv): void {
     ['ergol non brûlé (marge)', -margin, '#9aa3b5'],
     ['vitesse à l’arrêt des moteurs', final, CC.green],
   ];
-  const x0 = 170, w = 190, M = 11000;
+  const x0 = 170, w = 150, M = 12500;
   const X = (v: number) => x0 + (v / M) * w;
   let acc = 0;
   rows.forEach(([label, v, col], i) => {

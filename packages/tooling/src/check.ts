@@ -6,13 +6,13 @@
 // The rules come from avbd's course/mini.selftest.ts; the ones about terms,
 // goals, test pairs and phrasing are new.
 
-import { compile, createGlossary, type CourseDef, type QuizSpec, type Timeline } from '@coursekit/core';
-import { TOOL_DIAGRAMS } from '@coursekit/diagrams';
+import { compile, controlBounds, createGlossary, diagramVariants, type CourseDef, type QuizSpec, type Timeline } from '@coursekit/core';
+import { DH, DW, TOOL_DIAGRAMS } from '@coursekit/diagrams';
 import {
   primmDefinesSlot, verifyCalculation, verifyClassify, verifyCode, verifySequence,
   type Exercise, type WorkshopConfig,
 } from '@coursekit/exercises';
-import { mockContext } from './mockctx.ts';
+import { mockContext, textProblems } from './mockctx.ts';
 
 export interface Finding { level: 'error' | 'warning'; rule: string; msg: string }
 export interface Report { course: string; findings: Finding[]; stats: Record<string, number>; ok: boolean }
@@ -116,7 +116,7 @@ export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }): 
   }
   for (const c of tl.caps) for (const cl of c.claims) {
     let r: boolean | string;
-    try { r = cl.check(course.model); } catch (x: any) { r = `erreur : ${x?.message ?? x}`; }
+    try { r = cl.check(); } catch (x: any) { r = `erreur : ${x?.message ?? x}`; }
     if (r !== true) err('claim', `« ${c.title} » affirme « ${cl.text} » : ${r === false ? 'le modèle ne le confirme pas' : r}`);
   }
 
@@ -135,7 +135,7 @@ export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }): 
       if (!verifySequence(ex, ex.items.map((_, i) => i)).ok) err('exercise', `${ex.id} : l’ordre attendu est refusé`);
     }
   }
-  walk(course, tl, err);
+  walk(course, tl, err, warn);
 
   const stats = {
     modules: tl.modules.filter((m) => m.kind === 'core').length,
@@ -152,28 +152,53 @@ export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }): 
   return { course: course.id, findings, stats, ok: !findings.some((f) => f.level === 'error') };
 }
 
-/** Every step's read-out and diagram, every capsule's diagram, run once. */
-function walk(course: CourseDef, tl: Timeline, err: (rule: string, msg: string) => void): void {
+/**
+ * Every step's read-out and diagram, every capsule's diagram, and every
+ * diagram shown with an experiment drawn with its controls at their bounds:
+ * nothing may throw, print a non-number, leave the frame or overlap.
+ */
+function walk(course: CourseDef, tl: Timeline, err: (rule: string, msg: string) => void, warn: (rule: string, msg: string) => void): void {
   const ctx = mockContext();
   const draw = { ...TOOL_DIAGRAMS, ...(course.diagrams ?? {}) } as Record<string, (c: CanvasRenderingContext2D, e: any) => void>;
+  const reported = new Set<string>();
+  /** draws once and reports what goes wrong, once per diagram and problem */
+  const run = (name: string, where: string, env: Record<string, unknown>): boolean => {
+    ctx.reset();
+    try { draw[name](ctx, { ptr: null, hits: new Set(), model: course.model, ...env }); } catch (x: any) {
+      err('walk', `schéma ${name} (${where}) : ${x?.message ?? x}`);
+      return false;
+    }
+    for (const p of textProblems(ctx.texts, DW, DH)) {
+      const key = `${name}|${p}`;
+      if (reported.has(key)) continue;
+      reported.add(key);
+      (p.startsWith('texte non numérique') ? err : warn)(p.startsWith('texte non numérique') ? 'walk' : 'layout', `schéma ${name} (${where}) : ${p}`);
+    }
+    return true;
+  };
   for (const c of tl.caps) {
     const v = tl.eval(c.t + 0.01);
-    if (c.hud) { try { c.hud(v); } catch (x: any) { err('walk', `« ${c.title} » : l’affichage calculé lève une erreur (${x?.message ?? x})`); } }
-    const d = tl.diagAt(c.t + 0.01);
-    if (d && draw[d.name]) {
-      for (const t of [0, 3.7, 11.2]) {
-        try { draw[d.name](ctx, { t, v, ptr: null, hits: new Set(), arg: d.arg, model: course.model }); } catch (x: any) { err('walk', `schéma ${d.name} (« ${c.title} ») : ${x?.message ?? x}`); break; }
-      }
+    if (c.hud) {
+      try { const s = c.hud(v); if (/NaN|undefined|Infinity/.test(s)) err('walk', `« ${c.title} » : l’affichage calculé donne « ${s} »`); } catch (x: any) { err('walk', `« ${c.title} » : l’affichage calculé lève une erreur (${x?.message ?? x})`); }
     }
+  }
+  for (const d of diagramVariants(tl)) {
+    if (!draw[d.name]) continue;
+    for (const t of [0, 3.7, 11.2]) if (!run(d.name, d.label, { t, v: d.v, arg: d.arg })) break;
   }
   for (const cp of course.toolbox ?? []) for (const s of cp.steps) {
     if (!s.diagram || !draw[s.diagram]) continue;
-    try { draw[s.diagram](ctx, { t: 1, v: {}, ptr: { x: 120, y: 90 }, hits: new Set(), model: course.model }); } catch (x: any) { err('walk', `fiche ${cp.id}, schéma ${s.diagram} : ${x?.message ?? x}`); }
+    run(s.diagram, `fiche ${cp.id}`, { t: 1, v: {}, ptr: { x: 120, y: 90 } });
   }
-  // experiments: their goals run on their own controls
+  // experiments: their goals run on their own controls, at their bounds too
   for (const st of tl.stops) {
     if (st.kind !== 'try' || !st.goals) continue;
-    const v = tl.eval(st.t);
-    for (const g of st.goals) { try { g.test({ v, ptr: { x: 0, y: 0 }, hits: new Set() }); } catch (x: any) { err('walk', `expérience « ${st.title} », objectif « ${g.label} » : ${x?.message ?? x}`); } }
+    const base = tl.eval(st.t);
+    const vs = [base, ...st.controls.flatMap((c) => controlBounds(c).map((x) => ({ ...base, [c.key]: x })))];
+    for (const g of st.goals) {
+      for (const v of vs) {
+        try { g.test({ v, ptr: { x: 0, y: 0 }, hits: new Set() }); } catch (x: any) { err('walk', `expérience « ${st.title} », objectif « ${g.label} » : ${x?.message ?? x}`); break; }
+      }
+    }
   }
 }

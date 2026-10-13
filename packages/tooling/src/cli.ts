@@ -2,12 +2,14 @@
 // coursekit — the command line.
 //   coursekit check <course.ts>   the four levels of checks, a readable report
 //   coursekit stats <course.ts>   chapters, steps, questions, estimated time
+//   coursekit tune <tune.ts>      sweep the model's parameters, check its windows
 //   coursekit new <dir> [title]   a new course project, ready to run
 
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { checkCourse } from './check.ts';
 import { scaffold } from './scaffold.ts';
+import { runTune } from './tune.ts';
 
 const [cmd, arg, ...rest] = process.argv.slice(2);
 
@@ -33,12 +35,24 @@ async function main(): Promise<number> {
     for (const [k, v] of Object.entries(r.stats)) console.log(`${k.padEnd(14)} ${v}`);
     return 0;
   }
+  if (cmd === 'tune' && arg) {
+    const mod = await import(pathToFileURL(resolve(arg)).href);
+    const specs = Array.isArray(mod.default) ? mod.default : [mod.default];
+    let failed = 0;
+    for (const spec of specs) {
+      const r = runTune(spec);
+      console.log(r.lines.join('\n'));
+      console.log('');
+      failed += r.failures.length;
+    }
+    return failed ? 1 : 0;
+  }
   if (cmd === 'new' && arg) {
     scaffold(resolve(arg), rest.join(' ') || 'Nouveau cours');
     console.log(`Projet créé dans ${arg}. Ensuite : npm install, puis npm run dev.`);
     return 0;
   }
-  console.log('usage : coursekit check <course.ts> | stats <course.ts> | new <dossier> [titre]');
+  console.log('usage : coursekit check <course.ts> | stats <course.ts> | tune <tune.ts> | new <dossier> [titre]');
   return 2;
 }
 
