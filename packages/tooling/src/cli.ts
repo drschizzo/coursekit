@@ -7,9 +7,7 @@
 
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { checkCourse } from './check.ts';
 import { scaffold } from './scaffold.ts';
-import { runTune } from './tune.ts';
 
 const [cmd, arg, ...rest] = process.argv.slice(2);
 
@@ -19,7 +17,10 @@ async function load(file: string) {
 }
 
 async function main(): Promise<number> {
+  // the checker and the tuner load the other packages: imported on demand, so
+  // that `coursekit new` also works before the first `npm install`
   if (cmd === 'check' && arg) {
+    const { checkCourse } = await import('./check.ts');
     const r = checkCourse(await load(arg));
     const errors = r.findings.filter((f) => f.level === 'error');
     const warnings = r.findings.filter((f) => f.level === 'warning');
@@ -31,11 +32,13 @@ async function main(): Promise<number> {
     return r.ok ? 0 : 1;
   }
   if (cmd === 'stats' && arg) {
+    const { checkCourse } = await import('./check.ts');
     const r = checkCourse(await load(arg));
     for (const [k, v] of Object.entries(r.stats)) console.log(`${k.padEnd(14)} ${v}`);
     return 0;
   }
   if (cmd === 'tune' && arg) {
+    const { runTune } = await import('./tune.ts');
     const mod = await import(pathToFileURL(resolve(arg)).href);
     const specs = Array.isArray(mod.default) ? mod.default : [mod.default];
     let failed = 0;
@@ -49,7 +52,7 @@ async function main(): Promise<number> {
   }
   if (cmd === 'new' && arg) {
     scaffold(resolve(arg), rest.join(' ') || 'Nouveau cours');
-    console.log(`Projet créé dans ${arg}. Ensuite : npm install, puis npm run dev.`);
+    console.log(`Projet créé dans ${arg}. Ensuite, à la racine du dépôt : npm install, puis npm run dev -w ${arg}.`);
     return 0;
   }
   console.log('usage : coursekit check <course.ts> | stats <course.ts> | tune <tune.ts> | new <dossier> [titre]');

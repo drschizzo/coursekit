@@ -1,8 +1,22 @@
 {
   "name": "@coursekit/tooling",
   "version": "0.1.0",
+  "private": true,
+  "description": "Le vérificateur de contenu, le réglage du modèle et la commande coursekit.",
+  "license": "UNLICENSED",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "bin": { "coursekit": "./src/cli.ts" },
-  "dependencies": { "@coursekit/core": "*", "@coursekit/diagrams": "*", "@coursekit/exercises": "*" }
+  "engines": {
+    "node": ">=22.18"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "coursekit": "./src/cli.ts"
+  },
+  "dependencies": {
+    "@coursekit/core": "*",
+    "@coursekit/diagrams": "*",
+    "@coursekit/exercises": "*"
+  }
 }

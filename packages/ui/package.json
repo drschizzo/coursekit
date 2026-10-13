@@ -1,7 +1,23 @@
 {
   "name": "@coursekit/ui",
   "version": "0.1.0",
+  "private": true,
+  "description": "Le lecteur : mountCourse, les scènes fournies, le thème.",
+  "license": "UNLICENSED",
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./theme.css": "./src/theme.css" },
-  "dependencies": { "@coursekit/core": "*", "@coursekit/diagrams": "*", "@coursekit/exercises": "*" }
+  "engines": {
+    "node": ">=22.18"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./theme.css": "./src/theme.css"
+  },
+  "dependencies": {
+    "@coursekit/core": "*",
+    "@coursekit/diagrams": "*",
+    "@coursekit/exercises": "*"
+  },
+  "sideEffects": [
+    "*.css"
+  ]
 }

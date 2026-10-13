@@ -76,14 +76,19 @@ classements et des mises en ordre.
 ## 3. Créer le projet
 
 ```bash
-node packages/tooling/src/cli.ts new courses/<id> "<titre>"
+npm run new -- courses/<id> "<titre>"
+npm install
 ```
 
-Puis ajouter le cours au `package.json` racine (`check:<id>`) et à `npm test`, et le port du
-serveur de développement dans `courses/<id>/package.json` (`vite --port 51xx --strictPort`).
+Le cours est un espace de travail npm : `npm test`, `npm run check`, `npm run tune` et
+`npm run build` à la racine l’incluent sans autre déclaration. Donner un port fixe à son serveur
+de développement dans `courses/<id>/package.json` (`vite --port 518x --strictPort`, un port
+libre). Compléter le `README.md` créé (plan des modules, modèle, simplifications), sur le modèle
+de `courses/fusee/README.md`.
 
-Fichiers : `src/model.ts`, `src/diagrams.ts`, `src/stage.ts`, `src/course.ts`, `src/main.ts`.
-S’inspirer de `courses/fusee`, qui utilise tous les éléments du format.
+Fichiers : `src/model.ts`, `src/tune.ts`, `src/diagrams.ts`, `src/stage.ts`, `src/course.ts`,
+`src/main.ts`. S’inspirer de `courses/fusee`, qui utilise tous les éléments du format. La
+référence du format est `docs/ecrire-un-cours.md` ; celle de l’API, `docs/reference.md`.
 
 ## 4. Écrire et régler le modèle — avant tout contenu
 
@@ -92,7 +97,7 @@ S’inspirer de `courses/fusee`, qui utilise tous les éléments du format.
 2. Ajouter `model: DomainModel` avec des `checks` : une loi connue (cas limite exact), un ordre
    de grandeur réel, et **l’issue du réglage nominal**.
 3. Écrire `src/tune.ts` avec `defineTune({ grid, run, show, expect })` et le lancer
-   (`npm run tune`, ou `node packages/tooling/src/cli.ts tune courses/<id>/src/tune.ts`). Il
+   (`npm run tune -w courses/<id>`). Il
    imprime l’issue pour chaque combinaison (un tableau pour deux paramètres). Régler jusqu’à
    obtenir, pour chaque expérience et chaque cas clinique prévus :
    - une **fenêtre de réussite** nette et assez large pour être trouvée au curseur ;
@@ -100,7 +105,7 @@ S’inspirer de `courses/fusee`, qui utilise tous les éléments du format.
    - pour chaque cas clinique, un réglage fautif dont le symptôme ne se confond pas avec celui
      d’un autre réglage.
 4. Écrire chaque fenêtre dans `expect` du fichier de réglage, et ajouter une `check` du modèle
-   pour l’issue nominale. Ajouter `tune:<id>` à `npm test`.
+   pour l’issue nominale.
 5. Envelopper la simulation partagée par la scène et les schémas dans `memo(...)`.
 
 Ne pas passer à l’étape 5 tant que le balayage ne donne pas ces fenêtres.
@@ -151,8 +156,8 @@ Le contenu s’écrit dans l’ordre de lecture avec le constructeur (`c.module`
 
 ## 7. Vérifier
 
-1. `npx tsc --noEmit -p .`, `npm run tune` puis
-   `node packages/tooling/src/cli.ts check courses/<id>/src/course.ts`. Corriger jusqu’à
+1. `npm run typecheck`, `npm run tune -w courses/<id>` puis `npm run check -w courses/<id>`
+   (ou `npm test` pour tout le dépôt). Corriger jusqu’à
    « ✓ prêt (0 remarque) » : les remarques `layout` (texte hors du cadre, textes superposés,
    trouvées en dessinant chaque schéma aux bornes des expériences) se corrigent aussi. Ne jamais
    affaiblir une règle du vérificateur pour passer.

@@ -12,7 +12,7 @@ Répartition du cours fusée : modèle 338 lignes, schémas 341, scène 164, con
 proprement dit (textes, questions, exercices) représente donc environ 40 % du code ; le reste est
 le modèle exécutable et ce qui le montre.
 
-Le cours passe les quatre niveaux du vérificateur (`npm run check:fusee` : « ✓ prêt ») et a été
+Le cours passe les quatre niveaux du vérificateur (`npm run check -w courses/fusee` : « ✓ prêt ») et a été
 parcouru dans le navigateur : scène animée (pas de tir, vol complet), dix schémas, atelier (calcul
 guidé, PRIMM, Parsons).
 

@@ -1,6 +1,14 @@
 {
   "name": "@coursekit/core",
   "version": "0.1.0",
+  "private": true,
+  "description": "Le format d'un cours, le constructeur, la frise, la progression enregistrée. Sans DOM.",
+  "license": "UNLICENSED",
   "type": "module",
-  "exports": { ".": "./src/index.ts" }
+  "engines": {
+    "node": ">=22.18"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
 }

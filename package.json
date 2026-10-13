@@ -1,17 +1,27 @@
 {
-  "name": "coursekit-monorepo",
+  "name": "coursekit",
+  "version": "0.1.0",
   "private": true,
+  "description": "Bibliothèque pour écrire des cours interactifs pilotés par un modèle exécutable du sujet.",
+  "license": "UNLICENSED",
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "workspaces": [
     "packages/*",
     "courses/*"
   ],
   "scripts": {
+    "dev:demo": "npm run dev -w courses/demo-mini",
+    "dev:fusee": "npm run dev -w courses/fusee",
+    "build": "npm run build --workspaces --if-present",
     "typecheck": "tsc -p tsconfig.json",
-    "check:demo": "node packages/tooling/src/cli.ts check courses/demo-mini/src/course.ts",
-    "check:fusee": "node packages/tooling/src/cli.ts check courses/fusee/src/course.ts",
-    "test": "node packages/tooling/test/run.ts && npm run check:demo && npm run check:fusee && npm run tune:fusee",
-    "tune:fusee": "node packages/tooling/src/cli.ts tune courses/fusee/src/tune.ts"
+    "check": "npm run check --workspaces --if-present",
+    "tune": "npm run tune --workspaces --if-present",
+    "test": "npm run typecheck && node packages/tooling/test/run.ts && npm run check && npm run tune",
+    "new": "coursekit new",
+    "archive": "git archive --format=tar.gz --prefix=coursekit/ -o coursekit-$npm_package_version.tar.gz HEAD"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
