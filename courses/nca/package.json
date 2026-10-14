@@ -1,0 +1,22 @@
+{
+  "name": "course-nca",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5186 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "coursekit check src/course.ts",
+    "tune": "coursekit tune src/tune.ts"
+  },
+  "dependencies": {
+    "@coursekit/core": "*",
+    "@coursekit/ui": "*",
+    "@coursekit/diagrams": "*",
+    "@coursekit/exercises": "*"
+  },
+  "devDependencies": {
+    "@coursekit/tooling": "*"
+  }
+}
