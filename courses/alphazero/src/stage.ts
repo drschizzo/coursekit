@@ -167,7 +167,7 @@ export const stage = () => canvasStage({
       const result = done ? (game.w === 0 ? 'partie nulle' : game.w === 1 ? 'X gagne' : 'O gagne') : `coup ${fr(shown)}`;
       const top = hud(ctx, safe, [
         [`partie d’auto-jeu n° ${fr(gi + 1)} · ${result}`, INK],
-        [`après ${fr(cp.games)} parties : ${TRAIN_OUTCOME[cp.searchLoss === 0 ? 'unbeatable' : 'beatable']}`, cp.searchLoss === 0 ? GREEN : RED],
+        [`après ${fr(cp.games)} parties : ${TRAIN_OUTCOME[cp.searchLoss < 0.05 ? 'unbeatable' : 'beatable']}`, cp.searchLoss < 0.05 ? GREEN : RED],
         ['X et O : le même programme', DIM],
       ]);
       const side = Math.max(40, Math.min(safe.w * 0.6, safe.y + safe.h - top - 24, 260));

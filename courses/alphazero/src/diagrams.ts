@@ -2,11 +2,13 @@
 // values: nothing is drawn from figures written by hand.
 
 import { fr, pct, type DiagramEnv } from '@coursekit/core';
-import { CC, DH, DW, alpha, arrow, axes, cached, cachedMaybe, clamp, dot, line, panel, text } from '@coursekit/diagrams';
+import { CC, DH, DW, alpha, arrow, axes, cached, cachedMaybe, circle, clamp, dot, line, panel, text } from '@coursekit/diagrams';
 import {
-  FACTS, FORK, LEVELS, MCTS_NOMINAL, ROBOT, SAMPLERS, STEPS, TRAIN, bestMoves, checkpointAt, countTree, legal, mctsOf,
-  minimax, play, playoutRun, robotAt, robotOf, rolloutEval, search, sgsWeight, trainOf, treeLog10, eloWin, GD, GD_OUTCOME, RL, RL_OUTCOME, gdOf, rlOf, valueBest, valueLoss, type Board,
+  FACTS, FORK, LEVELS, MAIN, MATCH_GAMES, MCTS_NOMINAL, REWARDS, ROBOT, SAMPLERS, STEPS, TRAIN, TRAIN_SEEDS, VARIANTS, allPositions, bestMoves,
+  checkpointAt, countTree, gradVariance, legal, mctsOf, minimax, play, playoutRun, randomAccuracy, robotAt, robotOf, robotSeeds, rolloutEval,
+  search, sgsWeight, trainOf, treeLog10, GD, GD_OUTCOME, gdOf, valueBest, valueLoss, type Board, type RobotSeeds,
 } from './model.ts';
+import { OPENSPIEL } from './openspiel.ts';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -177,56 +179,56 @@ function puct(ctx: Ctx, e: DiagramEnv): void {
 // ----------------------------------------------- 7. strength and simulations
 
 const SIMS = [1, 10, 25, 50, 100, 200, 400, 800, 1200, 1600, 3200];
-/** Losses against the perfect player, for each number of simulations. */
+/** Losses against the perfect player for each number of simulations, with their 95 % intervals, and OpenSpiel's. */
 function strength(ctx: Ctx, e: DiagramEnv): void {
-  const x0 = 46, y0 = 46, w = 300, h = 140;
-  axes2(ctx, x0, y0, w, h, 'simulations par coup', 'défaites sur 40');
-  const X = (n: number) => x0 + (Math.log10(n) / Math.log10(3200)) * w, Y = (l: number) => y0 + h - (l / 40) * h;
-  for (const l of [10, 20, 30, 40]) { line(ctx, x0, Y(l), x0 + w, Y(l), CC.grid, 1); text(ctx, String(l), x0 - 4, Y(l), CC.dim, 9, 'right'); }
+  const x0 = 46, y0 = 46, w = 300, h = 140, G = MATCH_GAMES;
+  axes2(ctx, x0, y0, w, h, 'simulations par coup', `défaites sur ${G}`);
+  const X = (n: number) => x0 + (Math.log10(n) / Math.log10(3200)) * w, Y = (l: number) => y0 + h - (l / G) * h;
+  for (const l of [25, 50, 75, 100]) { line(ctx, x0, Y(l), x0 + w, Y(l), CC.grid, 1); text(ctx, String(l), x0 - 4, Y(l), CC.dim, 9, 'right'); }
   for (const n of [1, 10, 100, 1000]) text(ctx, fr(n), X(n), y0 + h + 9, CC.dim, 9, 'center');
   let prev: [number, number] | null = null;
   for (const n of SIMS) {
     const r = cachedMaybe(`strength-${n}`, () => mctsOf({ sims: n, c: MCTS_NOMINAL.c }));
     if (!r) { prev = null; continue; }
     const p: [number, number] = [X(n), Y(r.vsPerfect.losses)];
+    line(ctx, p[0], Y(r.ci[0] * G), p[0], Y(r.ci[1] * G), alpha(CC.blue, 0.6), 1);
     if (prev) line(ctx, prev[0], prev[1], p[0], p[1], alpha(CC.blue, 0.7), 1.5);
     dot(ctx, p[0], p[1], CC.blue, 2.5);
     prev = p;
   }
+  for (const o of OPENSPIEL.bySims) circle(ctx, X(o.sims), Y(o.losses), 3.5, CC.violet, null, 1.3);
   const sims = Math.round(clamp(e.v.sims ?? MCTS_NOMINAL.sims, 1, 3200)), c = e.v.c ?? MCTS_NOMINAL.c;
   const cur = cachedMaybe(`strength-cur-${sims}-${c}`, () => mctsOf({ sims, c }));
-  text(ctx, `courbe bleue : c = ${fr(MCTS_NOMINAL.c, 1)}`, x0, 27, CC.blue, 9);
+  text(ctx, `bleu : ce cours (c = ${fr(MCTS_NOMINAL.c)}), intervalle à 95 % · cercles : OpenSpiel`, 14, 27, CC.dim, 9);
   if (cur) {
     dot(ctx, X(sims), Y(cur.vsPerfect.losses), CC.acc, 5);
-    text(ctx, `${fr(sims)} simulations, c = ${fr(c, 1)} : ${fr(cur.vsPerfect.losses)} défaites, ${fr(cur.vsPerfect.draws)} nuls`, x0, 12, CC.acc, 10);
+    text(ctx, `${fr(sims)} simulations, c = ${fr(c, 1)} : ${fr(cur.vsPerfect.losses)} défaites (entre ${fr(cur.ci[0] * G)} et ${fr(cur.ci[1] * G)})`, x0, 12, CC.acc, 10);
   } else text(ctx, 'calcul des parties…', x0, 12, CC.dim, 10);
 }
 
 // ------------------------------------------------ 8. policy and value
 
-/** What the two tables say, after a number of games of self-play. */
+/** What the network says about the course's position, after a number of games of self-play. */
 function nets(ctx: Ctx, e: DiagramEnv): void {
   const run = trainOf(e.v);
   const cp = checkpointAt(run, e.v.games ?? TRAIN.games);
   const pr = cp.probe[1];
-  drawBoard(ctx, FORK, 20, 56, 120, { heat: pr.p ?? undefined, labels: (pr.p ?? Array(9).fill(0)).map((x, i) => (FORK[i] === 0 && pr.p ? pct(x) : '')) });
+  drawBoard(ctx, FORK, 20, 56, 120, { heat: pr.p, labels: pr.p.map((x, i) => (FORK[i] === 0 ? pct(x) : '')) });
   text(ctx, `après ${fr(cp.games)} parties d’auto-jeu`, 20, 16, CC.fg, 11);
   text(ctx, 'politique : où chercher', 20, 40, CC.acc, 10);
   const x0 = 170;
   text(ctx, 'valeur : qui va gagner', x0, 40, CC.blue, 10);
-  const v = pr.v;
-  const bx = x0, by = 64, bwid = 190;
+  const v = pr.v, bx = x0, by = 64, bwid = 190, mid = bx + bwid / 2;
   ctx.fillStyle = CC.faint; ctx.fillRect(bx, by, bwid, 14);
   ctx.fillStyle = alpha(CC.blue, 0.8);
-  const mid = bx + bwid / 2;
   ctx.fillRect(Math.min(mid, mid + (v * bwid) / 2), by, Math.abs((v * bwid) / 2), 14);
   line(ctx, mid, by - 4, mid, by + 18, CC.dim, 1);
   text(ctx, 'O perd', bx, by + 28, CC.dim, 9);
   text(ctx, 'O gagne', bx + bwid, by + 28, CC.dim, 9, 'right');
   text(ctx, `estimation pour O : ${v >= 0 ? '+' : '−'}${fr(Math.abs(v), 2)}`, x0, by + 48, CC.fg, 10);
   text(ctx, 'vraie valeur : 0 (partie nulle)', x0, by + 64, CC.dim, 9);
-  if (!pr.p) text(ctx, 'position jamais vue : les tables sont vides', x0, by + 96, CC.red, 9);
-  text(ctx, `${fr(cp.known)} positions rangées dans les tables`, x0, by + 112, CC.dim, 9);
+  text(ctx, `${fr(cp.known)} positions rencontrées sur ${fr(allPositions().length)}`, x0, by + 96, CC.dim, 9);
+  text(ctx, 'le réseau répond aussi pour les autres', x0, by + 112, CC.dim, 9);
 }
 
 // ------------------------------------------------------- 9. AlphaGo 2016
@@ -240,17 +242,17 @@ function alphago(ctx: Ctx, e: DiagramEnv): void {
     ['recherche Monte-Carlo', 'guidée par les deux réseaux', 107, 184, CC.green],
   ];
   const lit = Math.floor(e.t / 1.2) % (boxes.length + 1);
-  boxes.forEach(([t, s, x, y, col], i) => {
+  boxes.forEach(([t, s2, x, y, col], i) => {
     panel(ctx, x, y, 166, 40, i < lit ? col : CC.faint, i < lit ? alpha(col, 0.12) : null);
     text(ctx, t, x + 83, y + 13, i < lit ? CC.fg : CC.dim, 10, 'center');
-    text(ctx, s, x + 83, y + 28, CC.dim, 8, 'center');
+    text(ctx, s2, x + 83, y + 28, CC.dim, 8, 'center');
   });
   arrow(ctx, 182, 60, 198, 60, CC.dim, 1.2, 5);
   arrow(ctx, 283, 82, 283, 110, CC.dim, 1.2, 5);
   arrow(ctx, 198, 132, 182, 132, CC.dim, 1.2, 5);
   arrow(ctx, 97, 154, 150, 182, CC.dim, 1.2, 5);
   arrow(ctx, 283, 154, 240, 182, CC.dim, 1.2, 5);
-  text(ctx, `AlphaGo, ${FACTS.leeYear}`, 14, 14, CC.fg, 11);
+  text(ctx, `AlphaGo, ${FACTS.leeYear} · AlphaGo Zero supprime la première case`, 14, 14, CC.fg, 11);
 }
 
 // -------------------------------------------------- 10. the self-play loop
@@ -260,90 +262,123 @@ function loop(ctx: Ctx, e: DiagramEnv): void {
   const cp = checkpointAt(run, e.v.games ?? TRAIN.games);
   const cx = DW / 2, cy = 124, R = 70;
   const nodes: [string, string][] = [
-    ['tables', `${fr(cp.known)} positions`],
+    ['réseau', `${fr(TRAIN.hidden)} neurones cachés`],
     ['auto-jeu', `${fr(TRAIN.sims)} simulations par coup`],
     ['parties', `${fr(cp.games)} jouées, ${fr(cp.distinct)} distinctes`],
-    ['entraînement', 'cibles : résultat et visites'],
+    ['descente de gradient', 'cibles : résultat et visites'],
   ];
   const lit = Math.floor(e.t / 1.2) % 4;
-  nodes.forEach(([t, s], i) => {
+  nodes.forEach(([t, s2], i) => {
     const a = -Math.PI / 2 + (i * Math.PI) / 2;
     const x = cx + Math.cos(a) * 112, y = cy + Math.sin(a) * R;
     panel(ctx, x - 66, y - 18, 132, 36, i === lit ? CC.acc : CC.faint, i === lit ? alpha(CC.acc, 0.12) : null);
     text(ctx, t, x, y - 6, i === lit ? CC.fg : CC.dim, 10, 'center');
-    text(ctx, s, x, y + 8, CC.dim, 8, 'center');
-    const b = -Math.PI / 2 + ((i + 0.5) * Math.PI) / 2;
-    dot(ctx, cx + Math.cos(b) * R * 1.15, cy + Math.sin(b) * R * 0.7, i === lit ? CC.acc : CC.faint, 3);
+    text(ctx, s2, x, y + 8, CC.dim, 8, 'center');
+    const b2 = -Math.PI / 2 + ((i + 0.5) * Math.PI) / 2;
+    dot(ctx, cx + Math.cos(b2) * R * 1.15, cy + Math.sin(b2) * R * 0.7, i === lit ? CC.acc : CC.faint, 3);
   });
   text(ctx, 'boucle', cx, cy, CC.dim, 10, 'center');
 }
 
 // ------------------------------------------------- 11. the learning curve
 
+/** Share of optimal moves, along self-play: the policy alone, the policy with the search. */
 function learning(ctx: Ctx, e: DiagramEnv): void {
   const run = trainOf(e.v);
   const G = run.checkpoints[run.checkpoints.length - 1].games;
   const x0 = 46, y0 = 50, w = 300, h = 128;
-  axes2(ctx, x0, y0, w, h, 'parties d’auto-jeu', 'défaites');
-  const X = (g: number) => x0 + (g / G) * w, Y = (l: number) => y0 + h - l * h;
-  for (const l of [0.5, 1]) { line(ctx, x0, Y(l), x0 + w, Y(l), CC.grid, 1); text(ctx, pct(l), x0 - 4, Y(l), CC.dim, 9, 'right'); }
+  axes2(ctx, x0, y0, w, h, 'parties d’auto-jeu', 'bons coups');
+  const X = (g: number) => x0 + (g / G) * w, Y = (a: number) => y0 + h - ((a - 0.4) / 0.6) * h;
+  for (const a of [0.6, 0.8, 1]) { line(ctx, x0, Y(a), x0 + w, Y(a), CC.grid, 1); text(ctx, pct(a), x0 - 4, Y(a), CC.dim, 9, 'right'); }
   for (const g of [200, 400]) text(ctx, fr(g), X(g), y0 + h + 9, CC.dim, 9, 'center');
-  const curve = (k: 'netLoss' | 'searchLoss', col: string) => {
+  const base = randomAccuracy(allPositions());
+  line(ctx, x0, Y(base), x0 + w, Y(base), alpha(CC.fg, 0.35), 1, [4, 4]);
+  text(ctx, 'au hasard', x0 + w, Y(base) - 7, CC.dim, 9, 'right');
+  const curve = (k: 'netAcc' | 'searchAcc', col: string) => {
     ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
     run.checkpoints.forEach((c, i) => (i ? ctx.lineTo(X(c.games), Y(c[k])) : ctx.moveTo(X(c.games), Y(c[k]))));
     ctx.stroke(); ctx.restore();
   };
-  curve('netLoss', alpha(CC.acc, 0.8));
-  curve('searchLoss', CC.blue);
-  const g = clamp(e.v.games ?? G, 0, G);
-  const cp = checkpointAt(run, g);
+  curve('netAcc', CC.acc);
+  curve('searchAcc', CC.blue);
+  const cp = checkpointAt(run, clamp(e.v.games ?? G, 0, G));
   line(ctx, X(cp.games), y0, X(cp.games), y0 + h, CC.dim, 1, [3, 3]);
-  dot(ctx, X(cp.games), Y(cp.searchLoss), CC.blue, 4);
-  dot(ctx, X(cp.games), Y(cp.netLoss), CC.acc, 4);
-  text(ctx, `politique seule : perd ${pct(cp.netLoss)} des parties`, x0, 10, CC.acc, 10);
-  text(ctx, `politique + recherche : perd ${pct(cp.searchLoss)} des parties`, x0, 24, CC.blue, 10);
-  text(ctx, `bruit d’exploration ${fr(e.v.explore ?? TRAIN.explore, 2)} · ${fr(run.distinct)} parties distinctes`, x0, DH - 10, CC.dim, 9);
+  dot(ctx, X(cp.games), Y(cp.searchAcc), CC.blue, 4);
+  dot(ctx, X(cp.games), Y(cp.netAcc), CC.acc, 4);
+  text(ctx, `politique seule : ${pct(cp.netAcc)} de bons coups, perd ${pct(cp.netLoss)} des parties`, x0, 10, CC.acc, 10);
+  text(ctx, `politique + recherche : ${pct(cp.searchAcc)} de bons coups, perd ${pct(cp.searchLoss)}`, x0, 24, CC.blue, 10);
 }
 
-// ----------------------------------------------------- 12. the Elo ladder
+// ------------------------------------------------- 12. generalisation
 
-function elo(ctx: Ctx, e: DiagramEnv): void {
+/** Share of optimal moves on the positions the network met, on those it never met, and at random. */
+function generalize(ctx: Ctx, e: DiagramEnv): void {
+  const run = trainOf(e.v);
+  const cp = checkpointAt(run, e.v.games ?? TRAIN.games);
   const rows: [string, number, string][] = [
-    [`AlphaGo Fan (${FACTS.eloYear.fan})`, FACTS.elo.fan, CC.blue],
-    [`AlphaGo Lee (${FACTS.eloYear.lee})`, FACTS.elo.lee, CC.blue],
-    [`AlphaGo Master (${FACTS.eloYear.master})`, FACTS.elo.master, CC.blue],
-    [`AlphaGo Zero (${FACTS.eloYear.zero})`, FACTS.elo.zero, CC.acc],
+    ['au hasard (une table vide)', run.unseenBase, CC.dim],
+    ['réseau, positions jamais vues', cp.netUnseen, CC.acc],
+    ['réseau, positions rencontrées', cp.netSeen, CC.acc],
+    ['réseau + recherche', cp.searchAcc, CC.blue],
   ];
-  const x0 = 150, w = 170, M = 5500;
-  const grow = clamp(e.t / 1.5, 0, 1);
+  const x0 = 180, w = 160;
   rows.forEach(([label, v, col], i) => {
-    const y = 34 + i * 38;
+    const y = 40 + i * 38;
     text(ctx, label, x0 - 8, y + 9, CC.fg, 10, 'right');
-    ctx.fillStyle = alpha(col, 0.7); ctx.fillRect(x0, y, (v / M) * w * grow, 18);
-    text(ctx, fr(v), x0 + (v / M) * w * grow + 5, y + 9, CC.dim, 10);
+    ctx.fillStyle = alpha(col === CC.dim ? CC.fg : col, col === CC.dim ? 0.3 : 0.75); ctx.fillRect(x0, y, v * w, 18);
+    text(ctx, pct(v), x0 + v * w + 5, y + 9, CC.dim, 10);
   });
-  text(ctx, 'force en points Elo, mesurée par DeepMind', 14, 14, CC.fg, 11);
-  text(ctx, `400 points d’écart : le plus fort gagne ${pct(eloWin(400))} des parties`, 14, 196, CC.dim, 9);
-  text(ctx, 'bleu : apprend d’abord des humains · orange : sans humains', 14, 212, CC.dim, 9);
+  text(ctx, `part des coups optimaux, après ${fr(cp.games)} parties`, 14, 14, CC.fg, 11);
+  text(ctx, `${fr(allPositions().length - cp.known)} positions jamais rencontrées pendant l’auto-jeu`, 14, 200, CC.dim, 9);
+  text(ctx, 'une table n’en saurait rien ; le réseau devine à partir des autres', 14, 214, CC.dim, 9);
 }
 
-// ---------------------------------------------------- 13. the robot chain
+// ---------------------------------------------- 13. exploration, five seeds
 
-/** The sub-steps of the assembly and the success from each start state. */
+/** The losses of the search along self-play, for the five seeds of the current settings. */
+function explore(ctx: Ctx, e: DiagramEnv): void {
+  const x0 = 46, y0 = 50, w = 300, h = 128;
+  axes2(ctx, x0, y0, w, h, 'parties d’auto-jeu', 'défaites');
+  const G = TRAIN.games;
+  const X = (g: number) => x0 + (g / G) * w, Y = (l: number) => y0 + h - l * h;
+  for (const l of [0.5, 1]) { line(ctx, x0, Y(l), x0 + w, Y(l), CC.grid, 1); text(ctx, pct(l), x0 - 4, Y(l), CC.dim, 9, 'right'); }
+  line(ctx, x0, Y(0.05), x0 + w, Y(0.05), alpha(CC.green, 0.5), 1, [4, 4]);
+  for (const g of [200, 400]) text(ctx, fr(g), X(g), y0 + h + 9, CC.dim, 9, 'center');
+  const noise = e.v.noise ?? TRAIN.noise, temp = Math.round(e.v.temp ?? TRAIN.temp);
+  let ok = 0, done = 0;
+  const dist: number[] = [];
+  for (const seed of TRAIN_SEEDS) {
+    const run = cachedMaybe(`train-${noise}-${temp}-${seed}`, () => trainOf({ noise, temp, tseed: seed }));
+    if (!run) continue;
+    done++;
+    if (run.outcome === 'unbeatable') ok++;
+    dist.push(run.distinct);
+    ctx.save(); ctx.strokeStyle = run.outcome === 'unbeatable' ? alpha(CC.blue, 0.85) : alpha(CC.red, 0.75); ctx.lineWidth = 1.5; ctx.beginPath();
+    run.checkpoints.forEach((c, i) => (i ? ctx.lineTo(X(c.games), Y(c.searchLoss)) : ctx.moveTo(X(c.games), Y(c.searchLoss))));
+    ctx.stroke(); ctx.restore();
+  }
+  text(ctx, `bruit à la racine ${fr(noise, 2)} · coups tirés au hasard : ${fr(temp)} premiers`, x0, 10, CC.acc, 10);
+  text(ctx, done < TRAIN_SEEDS.length ? `entraînement des ${TRAIN_SEEDS.length} graines… (${done})` : `${ok} graines sur ${TRAIN_SEEDS.length} sous 5 % de défaites · parties distinctes ≈ ${fr(dist.sort((a, b) => a - b)[2] ?? 0)}`, x0, 24, ok >= 4 ? CC.green : CC.red, 10);
+}
+
+// ---------------------------------------------------- 14. the robot chain
+
+/** The sub-steps of the assembly of the small part and the success from each start state. */
 function chain(ctx: Ctx, e: DiagramEnv): void {
   const run = robotOf(e.v);
-  const it = robotAt(run, e.arg !== undefined ? Number(e.arg) : Math.min(ROBOT.iters, Math.floor((e.t * 20) % (ROBOT.iters + 60))));
+  const T = run.hist[run.hist.length - 1].ep;
+  const it = robotAt(run, e.arg !== undefined ? Number(e.arg) : Math.min(T, ((e.t * 400) % (T + 1600))));
   const q = it.e;
   const bw = 66, x0 = 18, y = 36;
-  STEPS.forEach((s, i) => {
+  STEPS.forEach((s2, i) => {
     const x = x0 + i * (bw + 4);
     panel(ctx, x, y, bw, 34, alpha(CC.acc, 0.3 + 0.7 * q[i]), alpha(CC.acc, 0.08 + 0.3 * q[i]));
-    text(ctx, s, x + bw / 2, y + 11, CC.fg, 9, 'center');
+    text(ctx, s2, x + bw / 2, y + 11, CC.fg, 9, 'center');
     text(ctx, pct(q[i]), x + bw / 2, y + 25, CC.acc, 9, 'center');
   });
-  text(ctx, `sous-étapes réussies, itération ${fr(it.it)}`, x0, 18, CC.fg, 10);
+  text(ctx, `${VARIANTS[MAIN].name} : sous-étapes réussies, après ${fr(it.ep)} épisodes`, x0, 18, CC.fg, 10);
   const yb = 96, hb = 96;
-  LEVELS.forEach((l, j) => {
+  LEVELS.forEach((_, j) => {
     const x = x0 + (STEPS.length - 1 - j) * (bw + 4);
     const P = it.P[j];
     ctx.fillStyle = CC.faint; ctx.fillRect(x + 8, yb, bw - 16, hb);
@@ -355,79 +390,85 @@ function chain(ctx: Ctx, e: DiagramEnv): void {
   text(ctx, '← pièces détachées', x0, yb + hb + 30, CC.dim, 9);
   text(ctx, 'pièce alignée →', DW - 18, yb + hb + 30, CC.dim, 9, 'right');
 }
-// --------------------------------------------- 14. success-guided sampling
 
-/** The SGS weight against the success rate, and where the start states sit. */
+// --------------------------------------------- 15. success-guided sampling
+
+/** The SGS weight against the success rate (Zhang et al.), and the share of episodes each variant receives. */
 function sgs(ctx: Ctx, e: DiagramEnv): void {
-  const target = e.v.target ?? ROBOT.target;
+  const o = { ...ROBOT, target: e.v.target ?? ROBOT.target };
   const run = robotOf(e.v);
-  const it = robotAt(run, e.arg !== undefined ? Number(e.arg) : Math.min(ROBOT.iters, Math.floor((e.t * 20) % (ROBOT.iters + 60))));
-  const x0 = 46, y0 = 50, w = 300, h = 130;
+  const T = run.hist[run.hist.length - 1].ep;
+  const it = robotAt(run, e.arg !== undefined ? Number(e.arg) : Math.min(T, ((e.t * 400) % (T + 1600))));
+  const x0 = 46, y0 = 50, w = 180, h = 120;
   axes2(ctx, x0, y0, w, h, 'taux de succès', 'poids');
-  const X = (s: number) => x0 + s * w, Y = (p: number) => y0 + h - p * h;
-  for (const s of [0.25, 0.5, 0.75]) text(ctx, pct(s), X(s), y0 + h + 9, CC.dim, 9, 'center');
+  const X = (p: number) => x0 + p * w, Y = (q: number) => y0 + h - q * h;
+  for (const p of [0.5, 1]) text(ctx, pct(p), X(p), y0 + h + 9, CC.dim, 9, 'center');
   ctx.save(); ctx.strokeStyle = CC.acc; ctx.lineWidth = 2; ctx.beginPath();
-  for (let i = 0; i <= 100; i++) { const s = i / 100; const yy = Y(sgsWeight(s, target, ROBOT.conc, ROBOT.floor)); i ? ctx.lineTo(X(s), yy) : ctx.moveTo(X(s), yy); }
+  for (let i = 0; i <= 100; i++) { const p = i / 100; const yy = Y(sgsWeight(p, o)); i ? ctx.lineTo(X(p), yy) : ctx.moveTo(X(p), yy); }
   ctx.stroke(); ctx.restore();
-  line(ctx, X(target), y0, X(target), y0 + h, alpha(CC.acc, 0.5), 1, [3, 3]);
-  const LEVEL_COL = [CC.green, CC.blue, CC.violet, CC.pink, CC.red];
-  it.P.forEach((P, j) => dot(ctx, X(P), Y(sgsWeight(P, target, ROBOT.conc, ROBOT.floor)), LEVEL_COL[j], 4.5));
-  text(ctx, `cible ${pct(target)} · plancher ${pct(ROBOT.floor)} · itération ${fr(it.it)}`, x0, 12, CC.acc, 10);
-  text(ctx, 'états de départ : vert, pièce alignée ; rouge, pièces détachées', x0, 26, CC.dim, 9);
+  line(ctx, X(o.target), y0, X(o.target), y0 + h, alpha(CC.acc, 0.5), 1, [3, 3]);
+  text(ctx, `cible t = ${pct(o.target)} · κ = ${fr(o.conc)} · T = ${fr(o.temp)}`, x0, 12, CC.acc, 10);
+  text(ctx, `poids d’une configuration jamais réussie : ${pct(sgsWeight(0, o))} du maximum`, x0, 26, CC.dim, 9);
+  const xr = 250;
+  text(ctx, `épisodes, après ${fr(it.ep)}`, xr, 52, CC.fg, 10);
+  VARIANTS.forEach((v, k) => {
+    const y = 72 + k * 26;
+    text(ctx, v.name, xr, y, CC.dim, 9);
+    ctx.fillStyle = alpha(k === 3 ? CC.red : k === MAIN ? CC.acc : CC.blue, 0.75); ctx.fillRect(xr, y + 6, it.vshare[k] * 160, 8);
+    text(ctx, pct(it.vshare[k]), xr + it.vshare[k] * 160 + 4, y + 10, CC.dim, 9);
+  });
 }
 
-// ------------------------------------------------- 15. training curves
+// ------------------------------------------------- 16. training curves
 
-function curriculum(ctx: Ctx, e: DiagramEnv): void {
-  const run = robotOf(e.v);
-  const T = run.hist.length - 1;
+const ROBOT_OUTCOME_SHORT: Record<string, string> = { mastered: 'maîtrisé', slow: 'trop lent', capped: 'plafonne', stuck: 'bloqué', easy: 'que le facile', collapse: 'effondré' };
+/** Success on the small part from scratch, along the episodes, for the trainings of the current settings (one per seed). */
+function runsPlot(ctx: Ctx, rs: RobotSeeds, title: string, sub: string): void {
+  const T = rs.runs[0].hist[rs.runs[0].hist.length - 1].ep;
   const x0 = 46, y0 = 52, w = 300, h = 128;
-  axes2(ctx, x0, y0, w, h, 'itérations', 'succès');
+  axes2(ctx, x0, y0, w, h, 'épisodes', 'succès');
   const X = (i: number) => x0 + (i / T) * w, Y = (p: number) => y0 + h - p * h;
   for (const p of [0.5, 1]) { line(ctx, x0, Y(p), x0 + w, Y(p), CC.grid, 1); text(ctx, pct(p), x0 - 4, Y(p), CC.dim, 9, 'right'); }
-  for (const i of [100, 200]) text(ctx, fr(i), X(i), y0 + h + 9, CC.dim, 9, 'center');
+  for (const k of [2000, 4000]) if (k <= T) text(ctx, fr(k), X(k), y0 + h + 9, CC.dim, 9, 'center');
   line(ctx, x0, Y(0.8), x0 + w, Y(0.8), alpha(CC.green, 0.4), 1, [4, 4]);
-  const curve = (f: (r: (typeof run.hist)[number]) => number, col: string, wd = 2) => {
-    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = wd; ctx.beginPath();
-    run.hist.forEach((r, i) => (i ? ctx.lineTo(X(r.it), Y(f(r))) : ctx.moveTo(X(r.it), Y(f(r)))));
+  for (const r of rs.runs) {
+    ctx.save(); ctx.strokeStyle = r.outcome === 'mastered' ? alpha(CC.acc, 0.8) : alpha(CC.red, 0.8); ctx.lineWidth = 1.4; ctx.beginPath();
+    r.hist.forEach((hh, i) => (i ? ctx.lineTo(X(hh.ep), Y(hh.P[4])) : ctx.moveTo(X(hh.ep), Y(hh.P[4]))));
     ctx.stroke(); ctx.restore();
-  };
-  curve((r) => r.train, alpha(CC.blue, 0.8), 1.5);
-  curve((r) => r.P[4], CC.acc);
-  const k = Math.floor(((e.t * 0.25) % 1) * T);
-  dot(ctx, X(k), Y(run.hist[k].P[4]), CC.fg, 3.5);
-  const f = run.final;
-  text(ctx, `${SAMPLERS[e.v.sampler ?? ROBOT.sampler]} · ${ROBOT_OUTCOME_SHORT[run.outcome]}`, x0, 10, run.outcome === 'mastered' ? CC.green : CC.red, 10);
-  text(ctx, `tâche complète : ${pct(f.P[4])}`, x0, 25, CC.acc, 10);
-  text(ctx, `épisodes réussis : ${pct(f.train)}`, x0 + 175, 25, CC.blue, 10);
+  }
+  text(ctx, title, x0, 10, rs.outcome === 'mastered' ? CC.green : CC.red, 10);
+  text(ctx, sub, x0, 25, CC.dim, 9);
 }
-const ROBOT_OUTCOME_SHORT: Record<string, string> = { mastered: 'maîtrisé', slow: 'trop lent', capped: 'plafonne', stuck: 'bloqué', easy: 'n’apprend que le facile' };
+function curriculum(ctx: Ctx, e: DiagramEnv): void {
+  const rs = robotSeeds(e.v);
+  const m = rs.counts.mastered ?? 0;
+  runsPlot(ctx, rs, `${SAMPLERS[e.v.sampler ?? ROBOT.sampler]} · ${ROBOT_OUTCOME_SHORT[rs.outcome]} · ${m} sur ${rs.runs.length} maîtrisent`,
+    `${VARIANTS[MAIN].name} · épisodes réussis : ${pct(rs.runs[0].final.train)} · reprise : ${pct(rs.runs[0].final.x)}`);
+}
 
-// ----------------------------------------------- 16. binary or dense reward
+// ----------------------------------------------- 17. naive or potential shaping
 
-const WS = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
+const WS = [0, 1, 2, 3, 4, 6];
 function rewards(ctx: Ctx, e: DiagramEnv): void {
   const x0 = 46, y0 = 52, w = 300, h = 128;
-  axes2(ctx, x0, y0, w, h, 'poids de la récompense dense', 'à la fin');
-  const X = (v: number) => x0 + v * w, Y = (p: number) => y0 + h - p * h;
+  axes2(ctx, x0, y0, w, h, 'poids w de la récompense intermédiaire', 'à la fin');
+  const X = (v: number) => x0 + (v / 6) * w, Y = (p: number) => y0 + h - p * h;
   for (const p of [0.5, 1]) { line(ctx, x0, Y(p), x0 + w, Y(p), CC.grid, 1); text(ctx, pct(p), x0 - 4, Y(p), CC.dim, 9, 'right'); }
-  for (const v of [0.25, 0.5, 0.75]) text(ctx, fr(v, 2), X(v), y0 + h + 9, CC.dim, 9, 'center');
-  const runs = WS.map((v) => robotOf({ w: v }));
-  const curve = (f: (r: (typeof runs)[number]) => number, col: string) => {
+  for (const v of [2, 4]) text(ctx, fr(v), X(v), y0 + h + 9, CC.dim, 9, 'center');
+  const med = (rs: RobotSeeds) => { const xs = rs.runs.map((r) => r.final.P[4]).sort((a, b) => a - b); return (xs[1] + xs[2]) / 2; };
+  for (const [reward, col] of [[1, CC.red], [2, CC.green]] as const) {
+    const pts = WS.map((v) => cachedMaybe(`rew-${reward}-${v}`, () => robotSeeds({ reward, w: v })));
     ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
-    runs.forEach((r, i) => (i ? ctx.lineTo(X(WS[i]), Y(f(r))) : ctx.moveTo(X(WS[i]), Y(f(r)))));
+    let started = false;
+    pts.forEach((rs, i) => { if (!rs) { started = false; return; } const yy = Y(med(rs)); started ? ctx.lineTo(X(WS[i]), yy) : ctx.moveTo(X(WS[i]), yy); started = true; });
     ctx.stroke(); ctx.restore();
-  };
-  curve((r) => r.final.P[4], CC.acc);
-  curve((r) => r.final.x, alpha(CC.violet, 0.8));
-  const wv = e.v.w ?? ROBOT.w;
-  const cur = robotOf({ ...e.v, w: wv });
-  dot(ctx, X(wv), Y(cur.final.P[4]), CC.acc, 5);
-  dot(ctx, X(wv), Y(cur.final.x), CC.violet, 4);
-  text(ctx, `succès sur la tâche complète : ${pct(cur.final.P[4])}`, x0, 10, CC.acc, 10);
-  text(ctx, `épisodes où le robot repose et reprend la pièce : ${pct(cur.final.x)}`, x0, 25, CC.violet, 10);
+  }
+  const wv = e.v.w ?? ROBOT.w, rw = e.v.reward ?? ROBOT.reward;
+  const cur = robotSeeds(e.v);
+  dot(ctx, X(wv), Y(med(cur)), CC.fg, 5);
+  text(ctx, `${rw === 2 ? 'potentiel' : rw === 1 ? 'proximité' : REWARDS[rw]}, w = ${fr(wv, 1)} : succès ${pct(med(cur))} · reprise ${pct(cur.runs[0].final.x)}`, x0, 10, rw === 1 ? CC.red : rw === 2 ? CC.green : CC.fg, 10);
+  text(ctx, 'rouge : points de proximité · vert : façonnage par potentiel', x0, 25, CC.dim, 9);
 }
-
 // --------------------------------------------- 17. AlphaNIST's results
 
 function nist(ctx: Ctx, e: DiagramEnv): void {
@@ -515,29 +556,36 @@ function descent(ctx: Ctx, e: DiagramEnv): void {
   text(ctx, 'v = a × (menaces) + b', xr, 206, CC.fg, 10, 'left', true);
 }
 
-// --------------------------------------------- 20. eight runs of REINFORCE
+// ---------------------------------------- 20. eight trainings of the robot
 
-/** Success on the whole task along the episodes, for eight runs that differ by luck only. */
+/** Eight trainings of the robot that differ only by luck: step size, batch, baseline. */
 function seeds(ctx: Ctx, e: DiagramEnv): void {
-  const run = rlOf(e.v);
-  const T = run.runs[0].length - 1;
-  const x0 = 46, y0 = 50, w = 300, h = 128;
-  axes2(ctx, x0, y0, w, h, 'épisodes', 'succès');
-  const X = (i: number) => x0 + (i / T) * w, Y = (p: number) => y0 + h - p * h;
-  for (const p of [0.5, 1]) { line(ctx, x0, Y(p), x0 + w, Y(p), CC.grid, 1); text(ctx, pct(p), x0 - 4, Y(p), CC.dim, 9, 'right'); }
-  const E = T * run.batch;
-  for (const k of [1000, 2000, 3000]) if (k <= E) text(ctx, fr(k), X(k / run.batch), y0 + h + 9, CC.dim, 9, 'center');
-  const grow = clamp(e.t / 3, 0, 1);
-  run.runs.forEach((c, r) => {
-    const dead = run.finals[r] < 1e-6;
-    ctx.save(); ctx.strokeStyle = dead ? CC.red : alpha(CC.acc, 0.75); ctx.lineWidth = dead ? 2 : 1.3; ctx.beginPath();
-    const last = Math.floor(grow * T);
-    for (let i = 0; i <= last; i++) (i ? ctx.lineTo(X(i), Y(c[i])) : ctx.moveTo(X(i), Y(c[i])));
-    ctx.stroke(); ctx.restore();
+  const rs = robotSeeds({ ...e.v, sampler: 0, nseeds: 8 });
+  const bad = rs.runs.filter((r) => r.outcome !== 'mastered').length;
+  runsPlot(ctx, rs, `pas ${fr(e.v.lr ?? ROBOT.lr)} · lots de ${fr(e.v.batch ?? ROBOT.batch)} · ${(e.v.baseline ?? ROBOT.baseline) ? 'avec' : 'sans'} base · ${bad} sur 8 plafonnent`,
+    'huit graines, même réglage · rouge : ne reprend plus l’écrou');
+}
+
+// ---------------------------------------------------- 20 bis. the variance
+
+/** How much the gradient varies from one episode to the next, with and without a baseline, and with shaping. */
+function variance(ctx: Ctx, e: DiagramEnv): void {
+  const v = gradVariance();
+  const rows: [string, number, string][] = [
+    ['sans base de référence', v.plain, CC.red],
+    ['avec base de référence', v.baseline, CC.green],
+    ...v.ws.map((w, i) => [`potentiel, w = ${fr(w, 2)}`, v.shaped[i], CC.blue] as [string, number, string]),
+  ];
+  const x0 = 170, wd = 170, M = Math.max(...rows.map((r) => r[1]));
+  const grow = clamp(e.t / 1.5, 0, 1);
+  rows.forEach(([label, val, col], i) => {
+    const y = 40 + i * 30;
+    text(ctx, label, x0 - 8, y + 8, CC.fg, 10, 'right');
+    ctx.fillStyle = alpha(col, 0.75); ctx.fillRect(x0, y, (val / M) * wd * grow, 16);
+    text(ctx, pct(val / v.plain), x0 + (val / M) * wd * grow + 5, y + 8, CC.dim, 9);
   });
-  const dead = run.finals.filter((f) => f < 1e-6).length;
-  text(ctx, `pas ${fr(e.v.lr ?? RL.lr)} · lots de ${fr(run.batch)} épisodes · ${RL_OUTCOME[run.outcome]}`, x0, 12, run.outcome === 'stable' ? CC.green : CC.red, 10);
-  text(ctx, `huit essais, même réglage, autre hasard · effondrés : ${fr(dead)}`, x0, 27, CC.dim, 9);
+  text(ctx, 'variance du gradient d’un épisode (100 % : sans base)', 14, 14, CC.fg, 11);
+  text(ctx, 'même direction en moyenne, moins de hasard d’un épisode à l’autre', 14, 212, CC.dim, 9);
 }
 
 // --------------------------------------------- 21. credit assignment
@@ -565,6 +613,6 @@ function credit(ctx: Ctx, e: DiagramEnv): void {
 }
 
 export const DIAGRAMS = {
-  tree, explosion, minimax: minimaxDiag, rollouts, phases, puct, strength, nets, alphago, loop, learning, elo, chain, sgs,
-  curriculum, rewards, nist, slope1d, descent, seeds, credit,
+  tree, explosion, minimax: minimaxDiag, rollouts, phases, puct, strength, nets, alphago, loop, learning, generalize, explore, chain, sgs,
+  curriculum, rewards, nist, slope1d, descent, seeds, variance, credit,
 };

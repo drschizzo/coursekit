@@ -15,6 +15,7 @@
 // run this file. The published results are in FACTS, quoted, never derived.
 
 import { memo, type DomainModel } from '@coursekit/core';
+import { OPENSPIEL } from './openspiel.ts';
 
 /** A seeded random generator (mulberry32): every run of the course is reproducible. */
 export function rng(seed: number): () => number {
@@ -182,7 +183,10 @@ export function search(b: Board, o: SearchOpts): SearchResult {
   const expand = (n: Node, p: number[] | null): void => {
     const ms = legal(n.board);
     const tot = p ? ms.reduce((s, m) => s + p[m], 0) : 0;
-    n.children = ms.map((m) => ({ move: m, board: play(n.board, m), N: 0, W: 0, P: p && tot > 0 ? p[m] / tot : 1 / ms.length, children: null }));
+    // the children in a random order: ties are not broken in favour of the first cells (OpenSpiel does the same)
+    const order = ms.slice();
+    for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    n.children = order.map((m) => ({ move: m, board: play(n.board, m), N: 0, W: 0, P: p && tot > 0 ? p[m] / tot : 1 / ms.length, children: null }));
   };
   for (let s = 0; s < Math.max(1, o.sims); s++) {
     let n = root;
@@ -246,19 +250,30 @@ export function match(p: Player, opp: Player, games: number, seed: number): Matc
   return m;
 }
 
+/** Wilson 95 % interval of a proportion k / n: what the true rate can be, given the luck of n games. */
+export function wilson(k: number, n: number, z = 1.96): [number, number] {
+  if (n === 0) return [0, 1];
+  const p = k / n, d = 1 + (z * z) / n;
+  const c = (p + (z * z) / (2 * n)) / d, h = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / d;
+  return [Math.max(0, c - h), Math.min(1, c + h)];
+}
+/** Games played against the perfect player to rate a search (half as X, half as O). */
+export const MATCH_GAMES = 100;
+
 export type MctsOutcome = 'solid' | 'fragile' | 'weak';
-export interface MctsRun { vsPerfect: Match; vsRandom: Match; outcome: MctsOutcome }
+export interface MctsRun { vsPerfect: Match; vsRandom: Match; outcome: MctsOutcome; ci: [number, number] }
 /** Pure MCTS (random playouts) with `sims` simulations per move and constant c: 40 games against each opponent. */
 export const mctsOf = memo((v: Record<string, number>): MctsRun => {
   const sims = Math.round(v.sims ?? MCTS_NOMINAL.sims), c = v.c ?? MCTS_NOMINAL.c;
   const p = mctsPlayer(sims, c);
-  const vsPerfect = match(p, perfectPlayer, 40, 7);
+  const vsPerfect = match(p, perfectPlayer, MATCH_GAMES, 7);
   const vsRandom = match(p, randomPlayer, 40, 11);
-  const lr = vsPerfect.losses / vsPerfect.games;
-  return { vsPerfect, vsRandom, outcome: vsPerfect.losses <= 1 ? 'solid' : lr <= 0.25 ? 'fragile' : 'weak' };
+  const ci = wilson(vsPerfect.losses, vsPerfect.games);
+  // solid: we are 95 % sure it loses less than 6 % of its games (at most 1 in 100); weak: more than 20 %
+  return { vsPerfect, vsRandom, ci, outcome: ci[1] < 0.06 ? 'solid' : ci[0] > 0.2 ? 'weak' : 'fragile' };
 }, { key: (v) => `${Math.round(v.sims ?? MCTS_NOMINAL.sims)}|${v.c ?? MCTS_NOMINAL.c}` });
-export const MCTS_NOMINAL = { sims: 1600, c: 1.5 };
-export const MCTS_OUTCOME: Record<MctsOutcome, string> = { solid: 'ne perd presque jamais', fragile: 'perd quelques parties', weak: 'perd souvent' };
+export const MCTS_NOMINAL = { sims: 1600, c: 5 };
+export const MCTS_OUTCOME: Record<MctsOutcome, string> = { solid: 'perd au plus 1 partie sur 100', fragile: 'perd quelques parties', weak: 'perd souvent' };
 
 /** The probability that a deterministic player loses against the perfect player (who picks at random among its best moves), as X and as O, averaged. */
 export function lossRate(policy: (b: Board) => number): number {
@@ -301,231 +316,191 @@ export function canon(b: Board): { k: string; s: number[] } {
   return { k: best, s: bs };
 }
 
-/**
- * The two « networks » of the miniature: a value table and a policy table.
- * Like AlphaGo Zero, it uses the symmetries of the board: a position and its
- * rotations or reflections share one entry.
- */
-export interface Tables { V: Map<string, number>; P: Map<string, number[]> }
-/** The prior of a board, in its own cells (null if the position was never seen). */
-export function priorOf(t: Tables, b: Board): number[] | null {
-  const { k, s } = canon(b);
-  const pc = t.P.get(k);
-  if (!pc) return null;
-  const p = Array(9).fill(0);
-  s.forEach((j, i) => { p[j] = pc[i]; });
-  return p;
-}
-export const valueOf = (t: Tables, b: Board): number => t.V.get(canon(b).k) ?? 0;
-export const tableEval = (t: Tables): Evaluator => (b) => ({ v: valueOf(t, b), p: priorOf(t, b) });
-/** The policy alone: the move with the highest prior (the first one on a tie). */
-export const netMove = (t: Tables, b: Board): number => {
-  const p = priorOf(t, b);
-  const ms = legal(b);
-  return p ? ms.reduce((a, m) => (p[m] > p[a] ? m : a), ms[0]) : ms[0];
-};
+/** Every unfinished position, once (the course's test set). */
+export const allPositions = memo((): Board[] => {
+  const seen = new Map<string, Board>();
+  const walk = (b: Board): void => { const k = keyOf(b); if (seen.has(k) || over(b)) return; seen.set(k, b); for (const m of legal(b)) walk(play(b, m)); };
+  walk(EMPTY);
+  return [...seen.values()];
+}, { key: () => 'all' });
 
-export interface TrainOpts { games: number; sims: number; c: number; explore: number; lr: number; seed: number; every: number; evalSims: number }
-export const TRAIN: TrainOpts = { games: 600, sims: 48, c: 1.5, explore: 0.75, lr: 0.02, seed: 2, every: 20, evalSims: 48 };
+/**
+ * The network of the miniature AlphaZero: 18 inputs (the cells of the player
+ * to move, then the opponent's), one layer of H tanh units, a policy head (one
+ * logit per cell, illegal cells left out of the softmax) and a value head
+ * (tanh). Unlike a table, it answers for positions it has never seen.
+ */
+export interface Net { H: number; W1: number[][]; b1: number[]; Wp: number[][]; bp: number[]; Wv: number[]; bv: number }
+export function makeNet(H: number, seed: number): Net {
+  const r = rng(seed);
+  const g = (sc: number) => (r() * 2 - 1) * sc;
+  return {
+    H, W1: Array.from({ length: H }, () => Array.from({ length: 18 }, () => g(0.3))), b1: Array(H).fill(0),
+    Wp: Array.from({ length: 9 }, () => Array.from({ length: H }, () => g(0.1))), bp: Array(9).fill(0),
+    Wv: Array.from({ length: H }, () => g(0.1)), bv: 0,
+  };
+}
+export const encode = (b: Board): number[] => {
+  const me = toMove(b), x = Array(18).fill(0);
+  b.forEach((v, i) => { if (v === me) x[i] = 1; else if (v === -me) x[9 + i] = 1; });
+  return x;
+};
+export function netForward(n: Net, b: Board): { x: number[]; h: number[]; p: number[]; v: number } {
+  const x = encode(b);
+  const h = n.W1.map((w, j) => { let z = n.b1[j]; for (let i = 0; i < 18; i++) if (x[i]) z += w[i]; return Math.tanh(z); });
+  const lg = n.Wp.map((w, k) => w.reduce((s, wi, j) => s + wi * h[j], n.bp[k]));
+  let mx = -Infinity;
+  for (let k = 0; k < 9; k++) if (b[k] === 0) mx = Math.max(mx, lg[k]);
+  const e = lg.map((l, k) => (b[k] === 0 ? Math.exp(l - mx) : 0));
+  const se = e.reduce((a, c) => a + c, 0) || 1;
+  const v = Math.tanh(n.Wv.reduce((s, w, j) => s + w * h[j], n.bv));
+  return { x, h, p: e.map((q) => q / se), v };
+}
+export interface Sample { b: Board; pi: number[]; z: number }
+/**
+ * One step of stochastic gradient descent on a batch: the loss is
+ * (v − z)² + cross-entropy(π, p), the value against the result and the policy
+ * against the visit shares of the search, as in AlphaZero.
+ */
+export function netStep(n: Net, batch: Sample[], lr: number): number {
+  let loss = 0;
+  const f = lr / batch.length;
+  for (const s of batch) {
+    const { x, h, p, v } = netForward(n, s.b);
+    loss += (v - s.z) ** 2 - s.pi.reduce((a, q, k) => a + (q > 0 ? q * Math.log(Math.max(1e-12, p[k])) : 0), 0);
+    const gv = 2 * (v - s.z) * (1 - v * v);
+    const gl = p.map((pk, k) => pk - s.pi[k]);
+    for (let j = 0; j < n.H; j++) {
+      let gh = gv * n.Wv[j];
+      for (let k = 0; k < 9; k++) gh += gl[k] * n.Wp[k][j];
+      gh *= 1 - h[j] * h[j];
+      n.Wv[j] -= f * gv * h[j];
+      for (let k = 0; k < 9; k++) n.Wp[k][j] -= f * gl[k] * h[j];
+      for (let i = 0; i < 18; i++) if (x[i]) n.W1[j][i] -= f * gh;
+      n.b1[j] -= f * gh;
+    }
+    n.bv -= f * gv;
+    for (let k = 0; k < 9; k++) n.bp[k] -= f * gl[k];
+  }
+  return loss / batch.length;
+}
+export const netEval = (n: Net): Evaluator => (b) => { const o = netForward(n, b); return { v: o.v, p: o.p }; };
+/** The policy alone: the legal move of highest probability. */
+export const netMove = (n: Net, b: Board): number => { const p = netForward(n, b).p; const ms = legal(b); return ms.reduce((a, m) => (p[m] > p[a] ? m : a), ms[0]); };
+/** The share of positions where a player picks a minimax-optimal move. */
+export const accuracy = (pos: Board[], pick: (b: Board) => number): number => pos.reduce((s, b) => s + (bestMoves(b).includes(pick(b)) ? 1 : 0), 0) / Math.max(1, pos.length);
+/** The same share for a player who picks at random among the legal moves. */
+export const randomAccuracy = (pos: Board[]): number => pos.reduce((s, b) => s + bestMoves(b).length / legal(b).length, 0) / Math.max(1, pos.length);
+
+export interface TrainOpts {
+  games: number; sims: number; c: number;
+  /** share of Dirichlet noise in the root priors during self-play */
+  noise: number;
+  /** the first `temp` moves of a game are drawn in proportion to the visits; the others are the most visited */
+  temp: number;
+  lr: number; decay: number; steps: number; batch: number; buffer: number; hidden: number; seed: number; every: number; evalSims: number;
+}
+export const TRAIN: TrainOpts = { games: 600, sims: 48, c: 3, noise: 0.5, temp: 9, lr: 0.1, decay: 300, steps: 8, batch: 32, buffer: 4000, hidden: 32, seed: 1, every: 100, evalSims: 48 };
+export const TRAIN_SEEDS = [1, 2, 3, 4, 5];
 
 export interface Checkpoint {
-  games: number; netLoss: number; searchLoss: number; distinct: number; known: number;
-  /** what the tables say about the FOCUS positions at this point */
-  probe: { p: number[] | null; v: number }[];
+  games: number;
+  /** probability of losing against the perfect player: the policy alone, the policy with the search */
+  netLoss: number; searchLoss: number;
+  /** share of optimal moves: the policy on positions met in self-play, on positions never met, the search on a sample */
+  netSeen: number; netUnseen: number; searchAcc: number; netAcc: number;
+  distinct: number; known: number;
+  /** what the network says about the FOCUS positions */
+  probe: { p: number[]; v: number }[];
+  loss: number;
 }
 export type TrainOutcome = 'unbeatable' | 'beatable';
-export interface TrainRun { checkpoints: Checkpoint[]; tables: Tables; games: { moves: number[]; w: number }[]; outcome: TrainOutcome; distinct: number }
+export interface TrainRun { checkpoints: Checkpoint[]; net: Net; games: { moves: number[]; w: number }[]; outcome: TrainOutcome; distinct: number; unseenBase: number }
+
+/** A fixed sample of positions, to measure the search's choices cheaply. */
+const SAMPLE = memo((): Board[] => { const all = allPositions(), r = rng(99); return Array.from({ length: 150 }, () => all[Math.floor(r() * all.length)]); }, { key: () => 's' });
 
 /**
- * A miniature AlphaZero. Each game of self-play runs the search at every move
- * with the current tables; the move is drawn in proportion to the visits with
- * probability `explore`, else the most visited one is played. After the game,
- * each position's value moves towards the result (from the side of the player
- * to move) and its policy towards the visit shares of the search.
+ * A miniature AlphaZero. Each game of self-play runs the search at every move,
+ * guided by the network, with noise in the root priors; the first `temp` moves
+ * are drawn in proportion to the visits. Every position of the game, in its 8
+ * symmetric images, goes into a buffer with two targets: the result z for the
+ * value, the visit shares π for the policy. After each game, the network takes
+ * `steps` steps of gradient descent on batches drawn from the buffer.
  */
 export function train(p: Partial<TrainOpts> = {}): TrainRun {
   const o = { ...TRAIN, ...p };
   const r = rng(o.seed);
-  const t: Tables = { V: new Map(), P: new Map() };
-  const ev = tableEval(t);
+  const net = makeNet(o.hidden, o.seed + 100);
+  const ev = netEval(net);
+  const buf: Sample[] = [];
   const checkpoints: Checkpoint[] = [];
   const games: TrainRun['games'] = [];
-  const seen = new Set<string>();
-  const seenN = new Map<string, number>();
+  const seenGames = new Set<string>(), seenPos = new Set<string>();
+  let lastLoss = 0;
+  const canonKey = (b: Board) => canon(b).k;
   const measure = (g: number): void => {
+    const all = allPositions();
+    const met = all.filter((b) => seenPos.has(canonKey(b))), unmet = all.filter((b) => !seenPos.has(canonKey(b)));
     checkpoints.push({
       games: g,
-      netLoss: lossRate((b) => netMove(t, b)),
-      searchLoss: lossRate((b) => search(b, { sims: o.evalSims, c: o.c, evaluate: ev }).best),
-      distinct: seen.size,
-      known: t.V.size,
-      probe: FOCUS.map((b) => ({ p: priorOf(t, b), v: valueOf(t, b) })),
+      netLoss: lossRate((b) => netMove(net, b)),
+      searchLoss: lossRate((b) => search(b, { sims: o.evalSims, c: o.c, evaluate: ev, seed: 1 }).best),
+      netSeen: accuracy(met, (b) => netMove(net, b)), netUnseen: accuracy(unmet, (b) => netMove(net, b)),
+      netAcc: accuracy(SAMPLE(), (b) => netMove(net, b)),
+      searchAcc: accuracy(SAMPLE(), (b) => search(b, { sims: o.evalSims, c: o.c, evaluate: ev, seed: 1 }).best),
+      distinct: seenGames.size, known: met.length,
+      probe: FOCUS.map((b) => { const f = netForward(net, b); return { p: f.p, v: f.v }; }),
+      loss: lastLoss,
     });
   };
   measure(0);
   for (let g = 1; g <= o.games; g++) {
     let b = EMPTY;
-    const hist: { k: string; pi: number[]; side: number }[] = [];
+    const hist: { b: Board; pi: number[]; side: number }[] = [];
     const moves: number[] = [];
     while (!over(b)) {
-      const s = search(b, { sims: o.sims, c: o.c, evaluate: ev, seed: Math.floor(r() * 1e9), noise: o.explore });
+      const s = search(b, { sims: o.sims, c: o.c, evaluate: ev, seed: Math.floor(r() * 1e9), noise: o.noise });
       const tot = s.visits.reduce((a, x) => a + x, 0);
       const pi = s.visits.map((x) => x / tot);
       let m = s.best;
-      if (r() < o.explore) {
-        let u = r(), acc = 0;
-        for (let i = 0; i < 9; i++) { acc += pi[i]; if (pi[i] > 0) m = i; if (u < acc && pi[i] > 0) { m = i; break; } }
+      if (moves.length < o.temp) {
+        const u = r();
+        let acc = 0;
+        for (let i = 0; i < 9; i++) { acc += pi[i]; if (pi[i] > 0 && u < acc) { m = i; break; } }
       }
-      hist.push({ k: keyOf(b), pi, side: toMove(b) });
+      hist.push({ b, pi, side: toMove(b) });
+      seenPos.add(canonKey(b));
       moves.push(m);
       b = play(b, m);
     }
     const w = winner(b);
     for (const h of hist) {
       const z = w === 0 ? 0 : w === h.side ? 1 : -1;
-      const { k, s } = canon(boardOf(h.k));
-      const n = (seenN.get(k) ?? 0) + 1;
-      seenN.set(k, n);
-      const lr = Math.max(o.lr, 1 / n);               // a running mean at first, then a moving one
-      const v0 = t.V.get(k) ?? 0;
-      t.V.set(k, v0 + lr * (z - v0));
-      const pi = s.map((j) => h.pi[j]);               // the visit shares, in the canonical cells
-      const p0 = t.P.get(k) ?? pi;
-      t.P.set(k, p0.map((x, i) => x + lr * (pi[i] - x)));
+      for (const S of SYMS) buf.push({ b: S.map((j) => h.b[j]), pi: S.map((j) => h.pi[j]), z });
     }
-    seen.add(moves.join(''));
+    if (buf.length > o.buffer) buf.splice(0, buf.length - o.buffer);
+    let L = 0;
+    for (let k = 0; k < o.steps; k++) L += netStep(net, Array.from({ length: o.batch }, () => buf[Math.floor(r() * buf.length)]), o.lr / (1 + g / o.decay));
+    lastLoss = L / o.steps;
+    seenGames.add(moves.join(''));
     games.push({ moves, w });
     if (g % o.every === 0 || g === o.games) measure(g);
   }
   const last = checkpoints[checkpoints.length - 1];
-  return { checkpoints, tables: t, games, distinct: seen.size, outcome: last.searchLoss === 0 ? 'unbeatable' : 'beatable' };
+  const unmet = allPositions().filter((b) => !seenPos.has(canonKey(b)));
+  return { checkpoints, net, games, distinct: seenGames.size, unseenBase: randomAccuracy(unmet), outcome: last.searchLoss < 0.05 ? 'unbeatable' : 'beatable' };
 }
 
-/** The training run the live values describe (explore, sims), shared by the stage and the diagrams. */
+/** The training run the live values describe (noise, temp, seed), shared by the stage and the diagrams. */
 export const trainOf = memo(
-  (v: Record<string, number>): TrainRun => { const sims = Math.round(v.tsims ?? TRAIN.sims); return train({ explore: v.explore ?? TRAIN.explore, sims, evalSims: sims }); },
-  { key: (v) => `${v.explore ?? TRAIN.explore}|${Math.round(v.tsims ?? TRAIN.sims)}` },
+  (v: Record<string, number>): TrainRun => train({ noise: v.noise ?? TRAIN.noise, temp: Math.round(v.temp ?? TRAIN.temp), seed: Math.round(v.tseed ?? TRAIN.seed) }),
+  { key: (v) => `${v.noise ?? TRAIN.noise}|${Math.round(v.temp ?? TRAIN.temp)}|${Math.round(v.tseed ?? TRAIN.seed)}` },
 );
 /** The checkpoint at `games` games of self-play (the last one before). */
 export const checkpointAt = (run: TrainRun, games: number): Checkpoint =>
   run.checkpoints.reduce((a, c) => (c.games <= games ? c : a), run.checkpoints[0]);
-export const TRAIN_OUTCOME: Record<TrainOutcome, string> = { unbeatable: 'ne perd plus', beatable: 'perd encore' };
-
-// --------------------------------------------------------- robot assembly
-
-/** The sub-steps of an assembly, in the order the robot does them. */
-export const STEPS = ['saisir', 'orienter', 'approcher', 'aligner', 'insérer'];
-/** Start states: level j leaves the last j sub-steps to do (5: parts laid out, from scratch). */
-export const LEVELS = ['pièce alignée', 'pièce près du but', 'pièce orientée en main', 'pièce saisie', 'pièces détachées'];
-const ORIENT = 1;
-
-export interface RobotOpts {
-  iters: number;
-  /** 0 uniform, 1 success-guided sampling, 2 from scratch only */
-  sampler: number;
-  /** SGS: the success rate it favours, and how sharply */
-  target: number; conc: number; floor: number;
-  /** weight of the dense reward (0: binary reward only) */
-  w: number;
-  lr: number; q0: number; x0: number;
-  /** forcing a part without re-grasping keeps this share of the orientation skill */
-  cap: number;
-}
-export const ROBOT: RobotOpts = { iters: 250, sampler: 1, target: 0.5, conc: 6, floor: 0.05, w: 0, lr: 0.3, q0: 0.15, x0: 0.05, cap: 0.4 };
-
-/** Probability of each sub-step of the policy: skill q, and the share x of re-grasping for the orientation. */
-export const stepProb = (q: number[], x: number, cap: number): number[] => q.map((qi, i) => (i === ORIENT ? qi * (x + (1 - x) * cap) : qi));
-/** Success from each start level: the product of the sub-steps left. */
-export const successByLevel = (e: number[]): number[] => LEVELS.map((_, j) => e.slice(STEPS.length - 1 - j).reduce((s, x) => s * x, 1));
-
-/** The SGS weight of a start state of success rate s: a Beta-shaped bump around `target`, never below `floor`. */
-export function sgsWeight(s: number, target: number, conc: number, floor: number): number {
-  const a = 1 + conc * target, b = 1 + conc * (1 - target);
-  const pdf = (u: number) => Math.pow(u, a - 1) * Math.pow(1 - u, b - 1);
-  return floor + (1 - floor) * (pdf(Math.min(1, Math.max(0, s))) / pdf(target));
-}
-/** The share of episodes started at each level. */
-export function samplerShares(P: number[], o: RobotOpts): number[] {
-  if (o.sampler === 2) return LEVELS.map((_, j) => (j === LEVELS.length - 1 ? 1 : 0));
-  const w = o.sampler === 1 ? P.map((s) => sgsWeight(s, o.target, o.conc, o.floor)) : P.map(() => 1);
-  const tot = w.reduce((s, x) => s + x, 0);
-  return w.map((x) => x / tot);
-}
-
-export type RobotOutcome = 'mastered' | 'slow' | 'capped' | 'stuck' | 'easy';
-export interface RobotIter {
-  it: number;
-  /** success of each sub-step, success from each start level, share of episodes started there */
-  e: number[]; P: number[]; share: number[];
-  /** share of re-grasping for the orientation; success of the episodes played (the training curve) */
-  x: number; train: number;
-}
-export interface RobotRun { hist: RobotIter[]; final: RobotIter; outcome: RobotOutcome; masteredAt: number }
-
-/**
- * Training in expected value, one batch of episodes per iteration. A
- * sub-step learns from the episodes started at a level only in proportion to
- * P(1 − P), P the success from that level: a batch always lost, or always
- * won, teaches nothing with a binary reward. A dense reward adds, for each
- * sub-step reached, a signal of weight w, and it rewards staying close to the
- * goal: re-grasping (moving the part away first) costs w each time.
- */
-export function trainRobot(p: Partial<RobotOpts> = {}): RobotRun {
-  const o = { ...ROBOT, ...p };
-  const n = STEPS.length;
-  const q = Array(n).fill(o.q0);
-  let lx = Math.log(o.x0 / (1 - o.x0));
-  const hist: RobotIter[] = [];
-  let masteredAt = -1;
-  for (let it = 0; it <= o.iters; it++) {
-    const x = 1 / (1 + Math.exp(-lx));
-    const e = stepProb(q, x, o.cap);
-    const P = successByLevel(e);
-    const share = samplerShares(P, o);
-    const rec = { it, e, P, share, x, train: share.reduce((s, sh, j) => s + sh * P[j], 0) };
-    hist.push(rec);
-    if (masteredAt < 0 && P[n - 1] >= 0.8) masteredAt = it;
-    if (it === o.iters) break;
-    const dq = Array(n).fill(0);
-    let dx = 0;
-    LEVELS.forEach((_, j) => {
-      const first = n - 1 - j;                      // the first sub-step left at level j
-      const signal = P[j] * (1 - P[j]);
-      let reach = 1;
-      for (let i = first; i < n; i++) {
-        dq[i] += share[j] * (signal + o.w * reach) * (1 - q[i]);
-        if (i === ORIENT) {
-          const later = e.slice(i + 1).reduce((s, y) => s * y, 1);
-          // binary: re-grasping raises the success; dense: it moves the part away from the goal
-          dx += share[j] * reach * (signal * q[i] * (1 - o.cap) * later * 4 - o.w);
-        }
-        reach *= e[i];
-      }
-    });
-    for (let i = 0; i < n; i++) q[i] = Math.min(0.995, q[i] + o.lr * dq[i]);
-    lx = Math.max(-8, Math.min(8, lx + o.lr * 4 * dx * x * (1 - x) * 10));
-  }
-  const final = hist[hist.length - 1];
-  const P5 = final.P[n - 1];
-  const outcome: RobotOutcome = P5 >= 0.8 ? 'mastered' : final.train < 0.05 ? 'stuck' : final.train >= 0.6 && P5 < 0.2 ? 'easy' : final.x < 0.5 ? 'capped' : 'slow';
-  return { hist, final, outcome, masteredAt };
-}
-
-/** The training the live values describe; shared by the stage and the diagrams. */
-export const robotOf = memo(
-  (v: Record<string, number>): RobotRun => trainRobot({ sampler: v.sampler ?? ROBOT.sampler, target: v.target ?? ROBOT.target, w: v.w ?? ROBOT.w, iters: ROBOT.iters }),
-  { key: (v) => `${v.sampler ?? ROBOT.sampler}|${v.target ?? ROBOT.target}|${v.w ?? ROBOT.w}` },
-);
-/** The iteration `it` of a run (clamped). */
-export const robotAt = (run: RobotRun, it: number): RobotIter => run.hist[Math.max(0, Math.min(run.hist.length - 1, Math.round(it)))];
-export const ROBOT_OUTCOME: Record<RobotOutcome, string> = {
-  mastered: 'tâche complète maîtrisée',
-  slow: 'progrès trop lents',
-  capped: 'plafonne : force la pièce',
-  stuck: 'bloqué : aucun succès',
-  easy: 'réussit l’entraînement, échoue la tâche complète',
-};
-export const SAMPLERS = ['uniforme', 'guidé par le succès', 'tâche complète seule'];
+export const TRAIN_OUTCOME: Record<TrainOutcome, string> = { unbeatable: 'perd moins de 5 % des parties', beatable: 'perd encore souvent' };
 
 // ----------------------------------------------------- gradient descent
 
@@ -590,63 +565,270 @@ export function descend(eta: number, steps = GD.steps): GdRun {
 export const gdOf = memo((v: Record<string, number>): GdRun => descend(v.eta ?? GD.eta), { key: (v) => String(v.eta ?? GD.eta) });
 export const GD_OUTCOME: Record<GdOutcome, string> = { converged: 'atteint le minimum', slow: 'trop lent', diverged: 'diverge' };
 
-// ---------------------------------------------- sampled reinforcement learning
+// --------------------------------------------------------- robot assembly
 
-export interface RlOpts { lr: number; batch: number; seed: number; episodes: number }
-export const RL: RlOpts = { lr: 16, batch: 16, seed: 1, episodes: 3200 };
-export const RL_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+/** The sub-steps of an assembly, in the order the robot does them. */
+export const STEPS = ['saisir', 'orienter', 'approcher', 'aligner', 'insérer'];
+/** Start states: level j leaves the last j sub-steps to do (5: parts laid out, from scratch). */
+export const LEVELS = ['pièce alignée', 'pièce près du but', 'pièce orientée en main', 'pièce saisie', 'pièces détachées'];
+export const ORIENT = 1;
+/** Time steps of an episode: one per sub-step, two more for a re-grasp (set the part down, pick it up). */
+export const HORIZON = STEPS.length + 2;
+export const SAMPLERS = ['uniforme', 'guidé par le succès', 'tâche complète seule'];
+/** Variants of the part: a difficulty subtracted from every sub-step's logit (the last one is defective: impossible). */
+export const VARIANTS = [{ name: 'grosse pièce', d: -1 }, { name: 'pièce standard', d: 0 }, { name: 'petite pièce', d: 1.5 }, { name: 'pièce défectueuse', d: 12 }];
+/** The variant the course follows: the small part, 4 mm, like the smallest of the NIST board. */
+export const MAIN = 2;
+/** A configuration: a start level and a variant. */
+export const CONFIGS = VARIANTS.flatMap((_, k) => LEVELS.map((_, j) => ({ level: j, variant: k })));
+export const REWARDS = ['binaire', 'dense naïve', 'façonnage par potentiel'];
 
+export interface RobotOpts {
+  /** episodes of the whole training, episodes per update, step size */
+  episodes: number; batch: number; lr: number;
+  /** 0 uniform, 1 success-guided sampling, 2 from scratch only */
+  sampler: number;
+  /** SGS (Zhang et al., section 3.2): target t, concentration κ, floor ε, softmax temperature T, history H */
+  target: number; conc: number; eps: number; temp: number; hist: number;
+  /** 0 binary, 1 naive dense (a penalty for the distance at every step), 2 potential-based shaping */
+  reward: number; w: number;
+  /** 1: subtract a learnt baseline (the average return from each level and time) */
+  baseline: number;
+  q0: number; x0: number;
+  /** forcing a part without re-grasping keeps this share of the orientation skill */
+  cap: number;
+  seed: number;
+}
+export const ROBOT: RobotOpts = {
+  episodes: 4800, batch: 16, lr: 2, sampler: 1, target: 0.5, conc: 1, eps: 1e-4, temp: 2, hist: 100,
+  reward: 0, w: 0, baseline: 1, q0: 0.15, x0: 0.05, cap: 0.4, seed: 1,
+};
+export const ROBOT_SEEDS = [1, 2, 3, 4];
+const sig = (x: number) => 1 / (1 + Math.exp(-x));
+
+export const INSERT = STEPS.length - 1;
 /**
- * The robot's chain learnt from sampled episodes (REINFORCE with a baseline):
- * each sub-step is an action, right with probability q = σ(θ). An episode
- * starts at a level drawn uniformly and gets 1 if every action left is right.
- * After each batch, θ moves by lr × (R − mean R) × (action − q), averaged:
- * the actions of the episodes better than the batch are made more likely,
- * those of the worse ones less likely, the right ones included.
+ * Probability of each sub-step of a policy: skill q, and the share x of
+ * re-grasping. A nut forced without being re-grasped stays slightly
+ * misoriented: the robot carries and aligns it as well, but it jams at the
+ * insertion, which then succeeds only `cap` times as often.
  */
-export function reinforce(p: Partial<RlOpts> = {}): { curve: number[]; batch: number } {
-  const o = { ...RL, ...p };
-  const r = rng(o.seed);
-  const sig = (x: number) => 1 / (1 + Math.exp(-x));
-  const n = STEPS.length;
-  const th = Array(n).fill(Math.log(ROBOT.q0 / (1 - ROBOT.q0)));
-  const curve: number[] = [];
-  const iters = Math.round(o.episodes / o.batch);
-  for (let it = 0; it <= iters; it++) {
-    const q = th.map(sig);
-    curve.push(q.reduce((s, x) => s * x, 1));
-    if (it === iters) break;
-    const eps: { a: number[]; R: number }[] = [];
-    for (let k = 0; k < o.batch; k++) {
-      const j = Math.floor(r() * n);
-      const a: number[] = [];
-      let R = 1;
-      for (let i = n - 1 - j; i < n; i++) { const ai = r() < q[i] ? 1 : 0; a[i] = ai; if (!ai) { R = 0; break; } }
-      eps.push({ a, R });
-    }
-    const base = eps.reduce((s, e) => s + e.R, 0) / o.batch;
-    for (let i = 0; i < n; i++) {
-      let g = 0;
-      for (const e of eps) if (e.a[i] !== undefined) g += (e.R - base) * (e.a[i] - q[i]);
-      th[i] = Math.max(-30, Math.min(30, th[i] + (o.lr * g) / o.batch));
-    }
-  }
-  return { curve, batch: o.batch };
+export const stepProb = (q: number[], x: number, cap: number): number[] => q.map((qi, i) => (i === INSERT ? qi * (x + (1 - x) * cap) : qi));
+/** The skills of a variant: σ(θ − d). */
+export const skillOf = (theta: number[], d: number): number[] => theta.map((t) => sig(t - d));
+/** Success from each start level: the product of the sub-steps left. */
+export const successByLevel = (e: number[]): number[] => LEVELS.map((_, j) => e.slice(STEPS.length - 1 - j).reduce((s, x) => s * x, 1));
+/**
+ * Success of a policy from each start level: the product of the skills left,
+ * and, when the orientation is still to do, the insertion of a forced nut
+ * (share 1 − x) succeeds only `cap` times as often.
+ */
+export const chainSuccess = (q: number[], x: number, cap: number): number[] =>
+  successByLevel(q).map((P, j) => (STEPS.length - 1 - j <= ORIENT ? P * (x + (1 - x) * cap) : P));
+
+/** The SGS kernel of a start state of success rate p: (p + ε)^(κt) · (1 − p + ε)^(κ(1−t)), a Beta shape whose mode is t. */
+export const sgsKernel = (p: number, t: number, k: number, eps: number): number => Math.pow(p + eps, k * t) * Math.pow(1 - p + eps, k * (1 - t));
+/** The share of episodes started at each level: SGS draws by a softmax of log(max(w, ε) + ε) / T. */
+export function samplerShares(rates: number[], o: Pick<RobotOpts, 'sampler' | 'target' | 'conc' | 'eps' | 'temp'>): number[] {
+  if (o.sampler !== 1) return rates.map(() => 1 / rates.length);
+  const l = rates.map((p) => Math.log(Math.max(sgsKernel(p, o.target, o.conc, o.eps), o.eps) + o.eps) / Math.max(1, o.temp));
+  const m = Math.max(...l), e = l.map((x) => Math.exp(x - m)), t = e.reduce((a, x) => a + x, 0);
+  return e.map((x) => x / t);
+}
+/** The SGS weight, relative to the best one, of a start state of success rate p (for the diagrams). */
+export const sgsWeight = (p: number, o: Pick<RobotOpts, 'target' | 'conc' | 'eps' | 'temp'> = ROBOT): number => {
+  const f = (q: number) => Math.exp(Math.log(Math.max(sgsKernel(q, o.target, o.conc, o.eps), o.eps) + o.eps) / Math.max(1, o.temp));
+  return f(p) / f(o.target);
+};
+
+/** Progress towards the goal, the potential Φ: the share of sub-steps done; setting the part down to re-grasp it moves it away. */
+const progress = (done: number, down: boolean) => done / STEPS.length - (down ? 0.2 : 0);
+
+export interface Episode {
+  /** the actions: the sub-step (or −1: the re-grasp choice), the action taken, its time */
+  acts: { i: number; a: number; t: number }[];
+  rewards: number[]; success: boolean; level: number; variant: number; forced: boolean;
+  /** the potential at each time (HORIZON + 1 values, the last one 0) */
+  phi: number[];
 }
 
-export type RlOutcome = 'stable' | 'slow' | 'collapse';
-export interface RlRun { runs: number[][]; batch: number; finals: number[]; outcome: RlOutcome }
-/** Eight runs that differ only by the luck of their episodes. */
-export const rlOf = memo((v: Record<string, number>): RlRun => {
-  const lr = v.lr ?? RL.lr, batch = Math.round(v.batch ?? RL.batch);
-  const runs = RL_SEEDS.map((seed) => reinforce({ lr, batch, seed }).curve);
-  const finals = runs.map((c) => c[c.length - 1]);
-  const sorted = [...finals].sort((x, y) => x - y);
-  // collapsed: a sub-step became almost impossible (far below its start), and no episode succeeds any more
-  const outcome: RlOutcome = finals.some((f) => f < 1e-6) ? 'collapse' : sorted[sorted.length / 2] < 0.8 ? 'slow' : 'stable';
-  return { runs, batch, finals, outcome };
-}, { key: (v) => `${v.lr ?? RL.lr}|${Math.round(v.batch ?? RL.batch)}` });
-export const RL_OUTCOME: Record<RlOutcome, string> = { stable: 'les huit essais réussissent', slow: 'trop lent', collapse: 'au moins un essai s’effondre' };
+/**
+ * One episode from `level` (the last `level + 1` sub-steps are left) with a
+ * part of variant `variant`, for a fixed horizon. A failed sub-step jams the
+ * part where it is, and the episode waits for the end. Re-grasping takes two
+ * more time steps and moves the part away from the goal.
+ */
+export function episode(theta: number[], tx: number, level: number, variant: number, o: RobotOpts, r: () => number): Episode {
+  const n = STEPS.length, first = n - 1 - level, d = VARIANTS[variant].d;
+  const acts: Episode['acts'] = [];
+  const states: { done: number; down: boolean }[] = [];
+  let t = 0, done = first, ok = true, forced = false;
+  for (let i = first; i < n && ok; i++) {
+    if (i === ORIENT) {
+      const rg = r() < sig(tx) ? 1 : 0;
+      acts.push({ i: -1, a: rg, t });
+      forced = !rg;
+      if (rg) { states.push({ done, down: false }); t++; states.push({ done, down: true }); t++; }
+    }
+    states.push({ done, down: false });
+    const q = sig(theta[i] - d) * (i === INSERT && forced ? o.cap : 1);
+    const a = r() < q ? 1 : 0;
+    acts.push({ i, a, t });
+    t++;
+    if (a) done++; else ok = false;
+  }
+  while (states.length < HORIZON) states.push({ done, down: false });
+  const success = ok && done === n;
+  const phi = states.map((st) => progress(st.done, st.down));
+  phi.push(0);                                        // Φ after the end of the episode: 0, as Ng et al. require
+  const rewards = states.map((_, k) => {
+    let rw = k === HORIZON - 1 && success ? 1 : 0;
+    if (o.reward === 1) rw += o.w * phi[k] / HORIZON;       // naive dense: points for being close, at every step
+    if (o.reward === 2) rw += o.w * (phi[k + 1] - phi[k]);  // potential-based: the change of Φ
+    return rw;
+  });
+  return { acts, rewards, success, level, variant, forced, phi };
+}
+/** The gradient of the log-probability of the episode's actions, each weighted by its reward-to-go minus a baseline. */
+function episodeGrad(ep: Episode, theta: number[], tx: number, o: RobotOpts, base: (ep: Episode, t: number) => number): number[] {
+  const g = Array(STEPS.length + 1).fill(0);
+  const d = VARIANTS[ep.variant].d;
+  const togo = (t: number) => ep.rewards.slice(t).reduce((a, x) => a + x, 0);
+  for (const { i, a, t } of ep.acts) {
+    const adv = togo(t) - base(ep, t);
+    if (i === -1) { g[STEPS.length] += adv * (a - sig(tx)); continue; }
+    // d log P(a) / dθ for an action of probability k·σ(θ − d): 1 − σ if it succeeded, −k·σ(1 − σ)/(1 − k·σ) if not
+    const q = sig(theta[i] - d), k = i === INSERT && ep.forced ? o.cap : 1;
+    g[i] += adv * (a ? 1 - q : (-k * q * (1 - q)) / (1 - k * q));
+  }
+  return g;
+}
+
+export type RobotOutcome = 'mastered' | 'slow' | 'capped' | 'stuck' | 'easy' | 'collapse';
+export interface RobotIter {
+  ep: number;
+  /** skill of each sub-step (a forced nut aside), success from each start level, share of episodes started there */
+  e: number[]; P: number[]; share: number[];
+  /** share of episodes on each variant */
+  vshare: number[];
+  /** share of re-grasping; success of the episodes played (the training curve) */
+  x: number; train: number;
+}
+export interface RobotRun { hist: RobotIter[]; final: RobotIter; outcome: RobotOutcome; masteredAt: number; seed: number }
+
+/** REINFORCE with reward-to-go and a learnt baseline; configurations drawn by the sampler. */
+export function trainRobot(p: Partial<RobotOpts> = {}): RobotRun {
+  const o = { ...ROBOT, ...p };
+  const r = rng(o.seed * 7919 + 13);
+  const n = STEPS.length;
+  const theta = Array(n).fill(Math.log(o.q0 / (1 - o.q0)));
+  let tx = Math.log(o.x0 / (1 - o.x0));
+  const histories: number[][] = CONFIGS.map(() => []);
+  const base = CONFIGS.map(() => Array(HORIZON).fill(0));
+  const hist: RobotIter[] = [];
+  let train = 0, masteredAt = -1;
+  const iters = Math.round(o.episodes / o.batch);
+  // the sampler draws a configuration; « from scratch only » means level 5 of every variant
+  const shareOf = (rates: number[]) => {
+    if (o.sampler === 2) { const w: number[] = CONFIGS.map((c) => (c.level === LEVELS.length - 1 ? 1 : 0)); const t = w.reduce((a, x) => a + x, 0); return w.map((x) => x / t); }
+    return samplerShares(rates, o);
+  };
+  for (let it = 0; it <= iters; it++) {
+    const rates = histories.map((h) => (h.length ? h.reduce((a, x) => a + x, 0) / h.length : 0));
+    const share = shareOf(rates);
+    const e = skillOf(theta, VARIANTS[MAIN].d);
+    const P = chainSuccess(e, sig(tx), o.cap);
+    if (it % 4 === 0 || it === iters) {
+      const lv = LEVELS.map((_, j) => CONFIGS.reduce((a, c, ci) => a + (c.level === j ? share[ci] : 0), 0));
+      const vs = VARIANTS.map((_, k) => CONFIGS.reduce((a, c, ci) => a + (c.variant === k ? share[ci] : 0), 0));
+      hist.push({ ep: it * o.batch, e, P, share: lv, vshare: vs, x: sig(tx), train });
+    }
+    if (masteredAt < 0 && P[n - 1] >= 0.8) masteredAt = it * o.batch;
+    if (it === iters) break;
+    const g = Array(n + 1).fill(0);
+    let wins = 0;
+    const eps: { ep: Episode; ci: number }[] = [];
+    for (let k = 0; k < o.batch; k++) {
+      let u = r(), ci = CONFIGS.length - 1;
+      for (let j = 0; j < CONFIGS.length; j++) { u -= share[j]; if (u < 0) { ci = j; break; } }
+      const ep = episode(theta, tx, CONFIGS[ci].level, CONFIGS[ci].variant, o, r);
+      eps.push({ ep, ci });
+      wins += ep.success ? 1 : 0;
+      histories[ci].push(ep.success ? 1 : 0);
+      if (histories[ci].length > o.hist) histories[ci].shift();
+    }
+    for (const { ep, ci } of eps) {
+      const d = episodeGrad(ep, theta, tx, o, (_, t) => (o.baseline ? base[ci][t] : 0));
+      for (let i = 0; i <= n; i++) g[i] += d[i];
+    }
+    // the baseline: an average of the returns-to-go from each configuration and time
+    for (const { ep, ci } of eps) for (let t = 0; t < HORIZON; t++) base[ci][t] += 0.1 * (ep.rewards.slice(t).reduce((a, x) => a + x, 0) - base[ci][t]);
+    for (let i = 0; i < n; i++) theta[i] = Math.max(-30, Math.min(30, theta[i] + (o.lr * g[i]) / o.batch));
+    tx = Math.max(-30, Math.min(30, tx + (o.lr * g[n]) / o.batch));
+    train = 0.9 * train + 0.1 * (wins / o.batch);
+  }
+  const final = hist[hist.length - 1];
+  const P5 = final.P[n - 1];
+  const outcome: RobotOutcome = P5 >= 0.8 ? 'mastered' : P5 < 1e-6 && Math.min(...theta) < -10 ? 'collapse' : final.train < 0.05 ? 'stuck'
+    : final.train >= 0.5 && P5 < 0.2 ? 'easy' : final.x < 0.5 ? 'capped' : 'slow';
+  return { hist, final, outcome, masteredAt, seed: o.seed };
+}
+
+const robotKey = (v: Record<string, number>) => [...['sampler', 'target', 'reward', 'w', 'lr', 'batch', 'baseline'].map((k) => v[k] ?? (ROBOT as any)[k]), v.nseeds ?? ROBOT_SEEDS.length].join('|');
+const robotOpts = (v: Record<string, number>): Partial<RobotOpts> => ({
+  sampler: v.sampler ?? ROBOT.sampler, target: v.target ?? ROBOT.target, reward: v.reward ?? ROBOT.reward, w: v.w ?? ROBOT.w,
+  lr: v.lr ?? ROBOT.lr, batch: Math.round(v.batch ?? ROBOT.batch), baseline: v.baseline ?? ROBOT.baseline,
+});
+export interface RobotSeeds { runs: RobotRun[]; outcome: RobotOutcome; counts: Partial<Record<RobotOutcome, number>> }
+/** Trainings that differ only by the luck of their episodes (4, or `nseeds`); the outcome is the one most of them reach. */
+export const robotSeeds = memo((v: Record<string, number>): RobotSeeds => {
+  const runs = Array.from({ length: Math.round(v.nseeds ?? ROBOT_SEEDS.length) }, (_, i) => trainRobot({ ...robotOpts(v), seed: i + 1 }));
+  const counts: Partial<Record<RobotOutcome, number>> = {};
+  for (const x of runs) counts[x.outcome] = (counts[x.outcome] ?? 0) + 1;
+  const outcome = (Object.entries(counts).sort((a, b) => b[1]! - a[1]!)[0][0]) as RobotOutcome;
+  return { runs, outcome, counts };
+}, { key: robotKey });
+/** The first of these trainings: the one the stage shows. */
+export const robotOf = (v: Record<string, number>): RobotRun => robotSeeds(v).runs[0];
+export const robotAt = (run: RobotRun, ep: number): RobotIter => run.hist.reduce((a, h) => (h.ep <= ep ? h : a), run.hist[0]);
+export const ROBOT_OUTCOME: Record<RobotOutcome, string> = {
+  mastered: 'tâche complète maîtrisée',
+  slow: 'progrès trop lents',
+  capped: 'plafonne : force la pièce',
+  stuck: 'bloqué : aucun succès',
+  easy: 'réussit l’entraînement, échoue la tâche complète',
+  collapse: 'effondré : une sous-étape est devenue impossible',
+};
+
+/**
+ * How much the estimate of the gradient varies from one episode to the next,
+ * at the starting policy, start states drawn uniformly: the sum of the
+ * variances of its components, over n episodes. Compares REINFORCE with the
+ * whole return, with the return-to-go minus a baseline, and with the shaping.
+ */
+export const gradVariance = memo((): { plain: number; baseline: number; shaped: number[]; ws: number[]; rewardVar: number[]; rewardP: number[] } => {
+  const o: RobotOpts = { ...ROBOT };
+  const theta = Array(STEPS.length).fill(Math.log(0.6 / 0.4)), tx = 0;
+  const N = 20000;
+  const draw = (oo: RobotOpts) => { const r = rng(4242); return Array.from({ length: N }, () => episode(theta, tx, Math.floor(r() * LEVELS.length), MAIN, oo, r)); };
+  const eps = draw(o);
+  const togo = (e: Episode, t: number) => e.rewards.slice(t).reduce((a, x) => a + x, 0);
+  // the exact average return-to-go from each level and time: the best baseline of this kind
+  const avg = LEVELS.map((_, l) => { const xs = eps.filter((e) => e.level === l); return Array.from({ length: HORIZON }, (_, t) => xs.reduce((a, e) => a + togo(e, t), 0) / Math.max(1, xs.length)); });
+  const variance = (grads: number[][]) => {
+    const d = grads[0].length, m = Array(d).fill(0);
+    for (const g of grads) g.forEach((x, i) => (m[i] += x / grads.length));
+    return grads.reduce((a, g) => a + g.reduce((p, x, i) => p + (x - m[i]) ** 2, 0), 0) / grads.length;
+  };
+  const plain = variance(eps.map((e) => episodeGrad(e, theta, tx, o, () => 0)));
+  const baseline = variance(eps.map((e) => episodeGrad(e, theta, tx, o, (ep, t) => avg[ep.level][t])));
+  const ws = [0.25, 0.5, 1];
+  const shaped = ws.map((w) => { const so = { ...o, reward: 2, w }; return variance(draw(so).map((e) => episodeGrad(e, theta, tx, so, () => 0))); });
+  // the variance of the binary reward from each level, against P(1 − P)
+  const P = chainSuccess(skillOf(theta, VARIANTS[MAIN].d), sig(tx), o.cap);
+  const rewardVar = LEVELS.map((_, l) => { const xs: number[] = eps.filter((e) => e.level === l).map((e) => (e.success ? 1 : 0)); const m = xs.reduce((a, x) => a + x, 0) / xs.length; return xs.reduce((a, x) => a + (x - m) ** 2, 0) / xs.length; });
+  return { plain, baseline, shaped, ws, rewardVar, rewardP: P.map((p) => p * (1 - p)) };
+}, { key: () => 'var' });
 
 // ------------------------------------------------------------ the model
 
@@ -657,12 +839,25 @@ export const model: DomainModel = {
     { name: 'l’arbre complet du morpion a 549 946 nœuds', run: () => (countTree().nodes === 549_946 ? null : `${countTree().nodes} nœuds`) },
     { name: 'joué parfaitement, le morpion est nul', run: () => (minimax(EMPTY) === 0 ? null : `valeur ${minimax(EMPTY)}`) },
     { name: 'un coup gagnant immédiat est le seul meilleur coup', run: () => { const b = after([0, 3, 1, 4]); const ms = bestMoves(b); return ms.length === 1 && ms[0] === 2 ? null : `meilleurs coups ${ms}`; } },
+    { name: 'OpenSpiel (DeepMind) : même arbre, même valeur du morpion', run: () => (OPENSPIEL.nodes === countTree().nodes && OPENSPIEL.rootValue === minimax(EMPTY) ? null : 'désaccord') },
+    {
+      name: 'OpenSpiel (DeepMind) : défaites compatibles à 95 % pour chaque réglage comparé',
+      run: () => {
+        const overlap = (a: number, b: number) => { const x = wilson(a, OPENSPIEL.games), y = wilson(b, OPENSPIEL.games); return x[0] <= y[1] && y[0] <= x[1]; };
+        const bad = [
+          ...OPENSPIEL.bySims.filter((o) => !overlap(mctsOf({ sims: o.sims, c: 5 }).vsPerfect.losses, o.losses)).map((o) => `${o.sims} simulations`),
+          ...OPENSPIEL.byC.filter((o) => !overlap(mctsOf({ sims: 1600, c: o.c }).vsPerfect.losses, o.losses)).map((o) => `c = ${o.c}`),
+        ];
+        return bad.length ? `désaccord : ${bad.join(', ')}` : null;
+      },
+    },
     { name: 'la recherche nominale (1 600 simulations) ne perd pas contre le joueur parfait', run: () => (mctsOf({}).outcome === 'solid' ? null : MCTS_OUTCOME[mctsOf({}).outcome]) },
-    { name: 'l’auto-jeu nominal mène à un joueur qui ne perd plus', run: () => (trainOf({}).outcome === 'unbeatable' ? null : `défaites ${checkpointAt(trainOf({}), 1e9).searchLoss}`) },
-    { name: 'le robot nominal (SGS, récompense binaire) maîtrise la tâche complète', run: () => (robotOf({}).outcome === 'mastered' ? null : ROBOT_OUTCOME[robotOf({}).outcome]) },
+    { name: 'l’auto-jeu nominal : la recherche guidée par le réseau perd moins de 5 % des parties', run: () => (trainOf({}).outcome === 'unbeatable' ? null : `défaites ${checkpointAt(trainOf({}), 1e9).searchLoss}`) },
+    { name: 'le robot nominal (SGS, récompense binaire) maîtrise la tâche complète', run: () => (robotSeeds({}).outcome === 'mastered' ? null : ROBOT_OUTCOME[robotSeeds({}).outcome]) },
     { name: 'la descente de gradient nominale atteint le minimum des moindres carrés', run: () => { const r = gdOf({}); const e = r.path[r.path.length - 1]; return r.outcome === 'converged' && Math.abs(e.a - valueBest().a) < 0.02 ? null : `${r.outcome}, a = ${e.a.toFixed(3)} au lieu de ${valueBest().a.toFixed(3)}`; } },
     { name: 'au minimum, le gradient est nul', run: () => { const b = valueBest(); const g = valueGrad(b.a, b.b); return Math.hypot(g[0], g[1]) < 1e-9 ? null : `gradient ${g}`; } },
-    { name: 'REINFORCE nominal : les huit essais réussissent', run: () => (rlOf({}).outcome === 'stable' ? null : RL_OUTCOME[rlOf({}).outcome]) },
+    { name: 'la variance d’une récompense binaire vaut P(1 − P)', run: () => { const v = gradVariance(); return v.rewardVar.every((x, i) => Math.abs(x - v.rewardP[i]) < 0.02) ? null : `${v.rewardVar} / ${v.rewardP}`; } },
+    { name: 'la base de référence réduit la variance du gradient', run: () => { const v = gradVariance(); return v.baseline < v.plain ? null : `${v.baseline} ≥ ${v.plain}`; } },
     { name: 'le succès d’une chaîne est le produit des sous-étapes', run: () => (Math.abs(successByLevel([0.5, 0.5, 0.5, 0.5, 0.5])[4] - 0.5 ** 5) < 1e-12 ? null : 'produit faux') },
   ],
   countTree, minimax, search, train, trainRobot,
