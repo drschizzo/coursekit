@@ -8,12 +8,13 @@
 // ./model.ts; the published results are quoted from FACTS.
 
 import { choice, dec, defineCourse, fr, numeric, pct, type Capsule } from '@coursekit/core';
+import { pickCapsules } from '@coursekit/diagrams';
 import { choiceQ, type Exercise, type WorkshopConfig } from '@coursekit/exercises';
 import { CELL, DIAGRAMS, pow10 } from './diagrams.ts';
 import {
   EMPTY, FACTS, FORK, MCTS_NOMINAL, MCTS_OUTCOME, ROBOT, STEPS, TRAIN, bestMoves, checkpointAt,
   countTree, legal, mctsOf, minimax, model, play, playoutCounts, playoutRun, robotOf, rolloutEval, scoreRef, search, sgsWeight,
-  stepProb, successByLevel, trainOf, treeLog10, type BackupFn, type ScoreFn,
+  stepProb, successByLevel, trainOf, treeLog10, GD, GD_OUTCOME, RL, RL_OUTCOME, gdOf, rlOf, valueBest, valueData, type BackupFn, type ScoreFn,
 } from './model.ts';
 
 const near = (a: number, b: number, rel = 0.03) => Math.abs(a - b) <= Math.abs(b) * rel;
@@ -32,6 +33,12 @@ const MNOM = mctsOf({});
 const RUN = trainOf({});
 const LAST = RUN.checkpoints[RUN.checkpoints.length - 1];
 const Q0_FULL = ROBOT.q0 ** STEPS.length;
+const VBEST = valueBest();
+const NDATA = valueData().length;
+const GD_NOM = gdOf({});
+/** One step of gradient descent on L(w) = (w − 3)², from w = 1. */
+const W1 = 1, SLOPE1 = 2 * (W1 - 3);
+const RL_NOM = rlOf({}), RL_BAD = rlOf({ lr: 256, batch: 4 });
 
 // ------------------------------------------------------------- toolbox
 
@@ -235,6 +242,30 @@ const exercises: Exercise[] = [
     win: 'Dans une chaîne, le maillon faible coûte cher : le succès est un produit.',
   },
   {
+    id: 'gdStep', module: 'm3', kind: 'calculation', title: 'Un pas de descente de gradient',
+    intro: `L’erreur d’un réseau à un seul paramètre w vaut L(w) = (w − 3)², minimale en w = 3. Sa pente vaut 2(w − 3). On part de w = ${W1}.`,
+    steps: [
+      { prompt: `Que vaut la pente en w = ${W1} ?`, value: SLOPE1, tol: 0, explain: `2 × (${W1} − 3) = ${fr(SLOPE1)} : l’erreur diminue quand w augmente.` },
+      { prompt: 'Avec η = 0,1, que vaut w après un pas (w − η × pente) ?', value: W1 - 0.1 * SLOPE1, explain: `${W1} − 0,1 × (${fr(SLOPE1)}) = ${fr(W1 - 0.1 * SLOPE1, 1)} : w se rapproche de 3.` },
+      { prompt: 'Avec η = 1,1, que vaut w après un pas ?', value: W1 - 1.1 * SLOPE1, explain: `${W1} − 1,1 × (${fr(SLOPE1)}) = ${fr(W1 - 1.1 * SLOPE1, 1)} : w passe de l’autre côté de 3, plus loin qu’au départ. Le pas suivant ira plus loin encore : la descente diverge.` },
+    ],
+    win: 'Le même calcul, répété sur des millions de paramètres, entraîne les réseaux d’AlphaZero.',
+  },
+  {
+    id: 'rlSort', module: 'm4', kind: 'classify', title: 'Reconnaître une difficulté du renforcement',
+    intro: 'Pour chaque observation faite pendant un entraînement, dites de quelle difficulté elle relève.',
+    categories: ['récompense rare', 'instabilité', 'récompense mal posée', 'écart simulation-réalité'],
+    items: [
+      { text: 'en partant des pièces détachées, aucun épisode ne réussit jamais', cat: 0 },
+      { text: 'deux entraînements identiques, à la graine près, finissent l’un à 99 %, l’autre à 0 %', cat: 1 },
+      { text: 'après une grosse mise à jour, le robot ne réussit plus rien et ne progresse plus', cat: 1, why: 'un effondrement : une action nécessaire est devenue presque impossible' },
+      { text: 'le robot aligne parfaitement l’écrou mais ne le visse jamais', cat: 2, why: 'il optimise ce qui est récompensé, pas la tâche' },
+      { text: 'la politique réussit en simulation et échoue sur le vrai bras', cat: 3 },
+      { text: 'un robot payé pour avancer apprend à tourner en rond très vite', cat: 2 },
+    ],
+    win: 'Chaque difficulté a son remède : partir près du but, limiter la taille des mises à jour, récompenser le résultat, varier les simulations.',
+  },
+  {
     id: 'sgsSort', module: 'm4', kind: 'classify', title: 'Ce que SGS tire souvent',
     intro: `SGS vise ici un taux de succès de ${pct(ROBOT.target)}. Pour chaque état de départ, dites s’il est tiré souvent ou rarement.`,
     categories: ['tiré souvent', 'tiré rarement'],
@@ -265,10 +296,10 @@ const EXPLORE_OPTS = [0, 0.25, 0.5, 0.75, 1].map((x) => ({ label: fr(x, 2), valu
 const TSIMS_OPTS = [16, 32, 48].map((x) => ({ label: fr(x), value: x }));
 
 const course = defineCourse({
-  id: 'alphazero', version: 1, language: 'fr',
+  id: 'alphazero', version: 2, language: 'fr',
   title: 'AlphaGo, AlphaZero et AlphaNIST',
-  lead: 'Comment un programme apprend-il seul à jouer au go mieux que les champions, et comment la même idée apprend-elle à un robot à assembler des pièces ? Le cours construit des versions miniatures de chaque étape : l’arbre de jeu du morpion, la recherche Monte-Carlo, un AlphaZero qui apprend en jouant contre lui-même, et un robot qui apprend à visser un écrou. Chaque chiffre est calculé par ces programmes, que vous pouvez faire varier.',
-  audience: { level: 'lycée', prerequisites: 'Probabilités simples, moyenne, puissances de dix ; lire une courte fonction JavaScript. Trois fiches rappellent les outils.', effort: 'quatre à cinq heures' },
+  lead: 'Comment un programme apprend-il seul à jouer au go mieux que les champions, et comment la même idée apprend-elle à un robot à assembler des pièces ? Le cours construit des versions miniatures de chaque étape : l’arbre de jeu du morpion, la recherche Monte-Carlo, la descente de gradient qui règle un réseau, un AlphaZero qui apprend en jouant contre lui-même, et un robot qui apprend à visser un écrou, avec les difficultés de l’apprentissage par renforcement. Chaque chiffre est calculé par ces programmes, que vous pouvez faire varier.',
+  audience: { level: 'lycée', prerequisites: 'Probabilités simples, moyenne, puissances de dix ; lire une courte fonction JavaScript. Trois fiches rappellent les outils.', effort: 'cinq à six heures' },
   modules: [
     {
       id: 'm1', title: 'Chercher dans un arbre de jeu', pitch: 'Ce qu’est un arbre de jeu, comment le parcourir, et pourquoi celui du go est hors de portée.',
@@ -282,13 +313,13 @@ const course = defineCourse({
     },
     {
       id: 'm3', title: 'AlphaGo et AlphaZero', pitch: 'Deux réseaux de neurones guident la recherche, et le programme apprend en jouant contre lui-même.',
-      goals: ['Expliquer le rôle du réseau de politique et du réseau de valeur', 'Décrire la boucle d’auto-jeu d’AlphaZero', 'Expliquer pourquoi la recherche améliore la politique'],
-      summary: ['La politique dit où chercher ; la valeur dit qui va gagner sans finir la partie.', 'AlphaGo imitait d’abord des parties humaines ; AlphaGo Zero et AlphaZero partent des seules règles.', 'Pendant l’auto-jeu, la politique apprend à imiter la recherche, et la valeur apprend le résultat des parties.', 'Sans exploration pendant l’entraînement, le programme rejoue les mêmes parties et cesse de progresser.'],
+      goals: ['Expliquer le rôle du réseau de politique et du réseau de valeur', 'Expliquer comment la descente de gradient règle les paramètres d’un réseau', 'Décrire la boucle d’auto-jeu d’AlphaZero', 'Expliquer pourquoi la recherche améliore la politique'],
+      summary: ['La politique dit où chercher ; la valeur dit qui va gagner sans finir la partie.', 'Un réseau apprend par descente de gradient : chaque paramètre recule un peu dans le sens de la pente de l’erreur ; trop petit, le pas est lent, trop grand, il diverge.', 'AlphaGo imitait d’abord des parties humaines ; AlphaGo Zero et AlphaZero partent des seules règles.', 'Pendant l’auto-jeu, la politique apprend à imiter la recherche, et la valeur apprend le résultat des parties.', 'Sans exploration pendant l’entraînement, le programme rejoue les mêmes parties et cesse de progresser.'],
     },
     {
       id: 'm4', title: 'AlphaNIST : du plateau de jeu au robot', pitch: 'La même philosophie appliquée à un robot qui assemble des pièces : récompense binaire et choix des états de départ.',
-      goals: ['Expliquer pourquoi une récompense binaire peut mieux réussir qu’une récompense dense', 'Expliquer comment l’échantillonnage guidé par le succès choisit les états de départ', 'Diagnostiquer un entraînement raté'],
-      summary: ['Le robot n’est récompensé que s’il réussit l’assemblage : il reste libre de trouver sa propre manière.', 'Une récompense dense pour l’approche et l’alignement peut interdire un détour utile, comme reposer une pièce pour la reprendre.', 'Un essai toujours raté n’apprend rien : il faut partir aussi d’états proches du but.', 'SGS tire surtout les états réussis environ une fois sur deux, sans abandonner les autres.'],
+      goals: ['Expliquer pourquoi une récompense binaire peut mieux réussir qu’une récompense dense', 'Expliquer comment l’échantillonnage guidé par le succès choisit les états de départ', 'Citer les principales difficultés de l’apprentissage par renforcement', 'Diagnostiquer un entraînement raté'],
+      summary: ['Le robot n’est récompensé que s’il réussit l’assemblage : il reste libre de trouver sa propre manière.', 'Une récompense dense pour l’approche et l’alignement peut interdire un détour utile, comme reposer une pièce pour la reprendre.', 'Un essai toujours raté n’apprend rien : il faut partir aussi d’états proches du but.', 'SGS tire surtout les états réussis environ une fois sur deux, sans abandonner les autres.', 'Les difficultés de l’apprentissage par renforcement : récompense rare, attribution du mérite, instabilité et effondrement, coût en expérience, récompense mal posée, écart entre simulation et réalité.'],
     },
     { id: 'exam', title: 'Épreuve', kind: 'exam', pitch: 'Un entraînement raté à diagnostiquer seul, et le test final.', goals: ['Diagnostiquer seul un cas inconnu'], summary: ['Observer, supposer, corriger un seul réglage, justifier.'] },
   ],
@@ -313,15 +344,23 @@ const course = defineCourse({
     { id: 'reward', name: 'récompense', forms: ['récompenses'], def: 'Nombre donné à la fin d’un essai (ou pendant) pour dire s’il a réussi.', module: 'm3' },
     { id: 'self', name: 'auto-jeu', def: 'Parties qu’un programme joue contre lui-même pour produire ses propres données d’entraînement.', module: 'm3' },
     { id: 'noise', name: 'bruit d’exploration', def: 'Hasard ajouté pendant l’entraînement (aux probabilités de la racine, au choix du coup) pour varier les parties.', module: 'm3' },
+    { id: 'loss', name: 'fonction de perte', def: 'Nombre qui mesure l’erreur d’un réseau sur ses exemples, par exemple la moyenne des carrés des écarts. L’entraîner, c’est la rendre petite.', module: 'm3' },
+    { id: 'grad', name: 'gradient', forms: ['gradients'], def: 'Pour chaque paramètre, de combien l’erreur change quand on l’augmente un peu : la pente de l’erreur.', tool: 'T4', module: 'm3' },
+    { id: 'gd', name: 'descente de gradient', def: 'Méthode qui règle les paramètres pas à pas, chacun dans le sens où l’erreur diminue : paramètre ← paramètre − η × gradient.', tool: 'T6', module: 'm3' },
+    { id: 'eta', name: 'taux d’apprentissage', def: 'La taille η des pas de la descente de gradient. Trop petit, l’apprentissage est lent ; trop grand, il diverge.', module: 'm3' },
     { id: 'elo', name: 'Elo', def: 'Échelle de force des joueurs : avec 400 points d’écart, le plus fort gagne environ 10 parties sur 11.', module: 'm3' },
     { id: 'episode', name: 'épisode', forms: ['épisodes'], def: 'Un essai du robot, depuis un état de départ jusqu’au succès ou à l’échec.', module: 'm4' },
     { id: 'binary', name: 'récompense binaire', def: '1 si la tâche est réussie, 0 sinon ; rien pour les progrès intermédiaires.', module: 'm4' },
     { id: 'dense', name: 'récompense dense', def: 'Récompense donnée aussi pour les progrès intermédiaires, comme se rapprocher du but ou aligner une pièce.', module: 'm4' },
     { id: 'start', name: 'état de départ', forms: ['états de départ'], def: 'Situation où commence un épisode : pièces détachées, pièce déjà saisie, assemblage presque fini.', module: 'm4' },
     { id: 'sgs', name: 'échantillonnage guidé par le succès', forms: ['SGS'], def: 'Choix des états de départ selon leur taux de succès : surtout ceux réussis environ une fois sur deux.', tool: 'S1', module: 'm4' },
+    { id: 'credit', name: 'attribution du mérite', def: 'Le problème de savoir quelle action d’un essai a causé sa réussite ou son échec, quand la récompense ne vient qu’à la fin.', module: 'm4' },
+    { id: 'batch', name: 'lot d’épisodes', forms: ['lots d’épisodes'], def: 'Les épisodes joués avec la même politique avant de la mettre à jour.', module: 'm4' },
+    { id: 'collapse', name: 'effondrement', def: 'Une mise à jour trop forte rend une action nécessaire presque impossible : plus aucun épisode ne réussit, et l’apprentissage ne peut plus repartir.', module: 'm4' },
+    { id: 'simreal', name: 'écart simulation-réalité', def: 'Différence entre le monde simulé où la politique apprend et le monde réel : frottements, capteurs, défauts des pièces.', module: 'm4' },
     { id: 'emerg', name: 'comportement émergent', forms: ['comportements émergents'], def: 'Manière de faire que personne n’a programmée et que l’apprentissage a trouvée.', module: 'm4' },
   ],
-  toolbox: CAPSULES,
+  toolbox: [...CAPSULES, ...pickCapsules(['T4', 'La pente d’une erreur, que suit la descente de gradient.'], ['T6', 'Le minimum de l’erreur d’un réseau.'])],
   tests: {
     tools: [
       { id: 'a1', skill: 'Puissances de dix', tool: 'O1', q: choice('Quel nombre est le plus grand ?', ['10¹²⁰', '10⁶⁰ × 10⁵⁰', '2 × 10¹⁰⁰', '10⁸⁰ + 10⁸⁰'], '10⁶⁰ × 10⁵⁰ = 10¹¹⁰ ; 2 × 10¹⁰⁰ et 2 × 10⁸⁰ sont bien plus petits que 10¹²⁰.') },
@@ -333,6 +372,8 @@ const course = defineCourse({
       { id: 'b2', skill: 'Apprendre sans humains', q: choice('D’où AlphaZero tire-t-il sa connaissance du go ?', ['de parties contre lui-même', 'de parties de champions', 'de conseils d’experts', 'd’une base de positions'], 'AlphaZero ne connaît que les règles ; il produit ses données en jouant contre lui-même.') },
       { id: 'b3', skill: 'Explorer et exploiter', q: choice('Une recherche qui approfondit toujours le coup qui lui semble le meilleur…', ['peut manquer un meilleur coup', 'trouve toujours le meilleur coup', 'explore tous les coups également', 'n’a besoin d’aucun calcul'], 'Un coup mal estimé au début ne serait plus jamais essayé.') },
       { id: 'b4', skill: 'Récompense binaire ou dense', q: choice('Pour un robot qui apprend à visser un écrou, récompenser chaque rapprochement du but…', ['peut l’enfermer dans une manière', 'l’aide toujours à mieux réussir', 'ne change rien au résultat', 'est indispensable pour apprendre'], 'Une récompense pour rester près du but pénalise les détours utiles, comme reposer la pièce pour la reprendre.') },
+      { id: 'b6', skill: 'Le taux d’apprentissage', q: choice('Pendant l’entraînement d’un réseau, augmenter beaucoup le taux d’apprentissage…', ['peut faire diverger l’apprentissage', 'accélère toujours l’apprentissage', 'ne change que la durée du calcul', 'rend toujours le réseau plus précis'], 'Un pas trop grand dépasse le minimum de l’erreur, de plus en plus loin à chaque pas.') },
+      { id: 'b7', skill: 'Les difficultés du renforcement', q: choice('Deux entraînements par renforcement identiques, sauf le hasard des essais, donnent…', ['parfois des résultats très différents', 'toujours exactement le même résultat', 'le même résultat, mais plus ou moins vite', 'des résultats qui ne dépendent que du réglage'], 'Les épisodes sont tirés au hasard : la politique apprise dépend de ceux qui ont été joués.') },
       { id: 'b5', skill: 'Choisir où commencer', q: choice('Avec une récompense binaire, où vaut-il mieux faire commencer la plupart des essais ?', ['là où il réussit une fois sur deux', 'toujours au début de la tâche', 'là où il réussit presque toujours', 'n’importe où, au hasard'], 'Un essai dont l’issue est incertaine apprend le plus ; un essai toujours raté ou toujours réussi n’apprend presque rien.') },
     ],
     post: [
@@ -340,13 +381,15 @@ const course = defineCourse({
       { id: 'p2', pair: 'b2', skill: 'Apprendre sans humains', q: choice('Un AlphaZero entraîné à un jeu inventé hier, sans joueur humain, peut-il devenir fort ?', ['oui, en jouant contre lui-même', 'non, il lui faut des experts', 'non, il lui faut une base', 'oui, si le jeu ressemble au go'], 'Il lui suffit des règles : l’auto-jeu fournit les exemples.') },
       { id: 'p3', pair: 'b3', skill: 'Explorer et exploiter', q: choice('Dans le score PUCT, à quoi sert le terme c·P·√N / (1 + n) ?', ['à essayer les coups peu visités', 'à favoriser les coups très visités', 'à compter les parties gagnées', 'à remplacer les parties au hasard'], 'Il est grand pour un coup peu visité (n petit) : la recherche finit par le réessayer.') },
       { id: 'p4', pair: 'b4', skill: 'Récompense binaire ou dense', q: choice('Un robot payé pour rester près du but ne repose jamais la pièce pour la reprendre. Pourquoi ?', ['reposer la pièce l’éloigne du but', 'reposer une pièce est impossible', 'la simulation interdit de lâcher', 'il manque de puissance de calcul'], 'Le détour fait perdre des points de récompense dense, même s’il mène plus souvent au succès.') },
+      { id: 'p6', pair: 'b6', skill: 'Le taux d’apprentissage', q: choice('L’erreur d’une descente de gradient grandit à chaque pas. Que faire d’abord ?', ['réduire le taux d’apprentissage', 'augmenter le taux d’apprentissage', 'ajouter des paramètres au réseau', 'garder le résultat du premier pas'], 'Une erreur qui grandit signale des pas trop grands, qui dépassent le minimum.') },
+      { id: 'p7', pair: 'b7', skill: 'Les difficultés du renforcement', q: choice('Pourquoi publie-t-on souvent les résultats de plusieurs entraînements, avec des graines différentes ?', ['un seul essai peut être chanceux ou malchanceux', 'pour montrer la vitesse des ordinateurs', 'parce que chaque graine est une autre tâche', 'pour obtenir une moyenne toujours meilleure'], 'Le hasard des épisodes change le résultat ; plusieurs graines montrent ce qui est fiable.') },
       { id: 'p5', pair: 'b5', skill: 'Choisir où commencer', q: choice('Un robot ne réussit jamais la tâche en partant des pièces détachées. Que changer d’abord ?', ['le faire partir près du but aussi', 'répéter la tâche complète plus', 'réduire la récompense du succès', 'supprimer les essais faciles'], 'Près du but, il réussit parfois : c’est là qu’un signal d’apprentissage apparaît.') },
     ],
   },
   diagrams: DIAGRAMS,
   stageKeys: ['sims', 'c', 'games', 'explore', 'tsims', 'sampler', 'target', 'w'],
   scenes: { go: 'Un plateau de go', tree: 'La recherche Monte-Carlo', selfplay: 'Des parties d’auto-jeu', robot: 'Le robot visse un écrou' },
-  defaults: { sims: MCTS_NOMINAL.sims, c: MCTS_NOMINAL.c, depth: 2, games: TRAIN.games, explore: TRAIN.explore, tsims: TRAIN.sims, sampler: ROBOT.sampler, target: ROBOT.target, w: ROBOT.w, it: ROBOT.iters },
+  defaults: { sims: MCTS_NOMINAL.sims, c: MCTS_NOMINAL.c, depth: 2, games: TRAIN.games, explore: TRAIN.explore, tsims: TRAIN.sims, sampler: ROBOT.sampler, target: ROBOT.target, w: ROBOT.w, it: ROBOT.iters, eta: GD.eta, lr: RL.lr, batch: RL.batch },
   model,
   exercises,
   rubric: [
@@ -477,11 +520,41 @@ const course = defineCourse({
       c.stage('selfplay');
       c.diagram('nets');
       c.ask('q-missing', 'Qu’est-ce qui manquait à la recherche Monte-Carlo pour bien jouer au go ?', ['de bonnes estimations des coups et des positions', 'un ordinateur beaucoup plus rapide', 'des règles du jeu plus simples', 'un plateau plus petit'], 'Elle explorait encore trop de coups, et ses parties au hasard jugeaient mal les positions.');
-      c.step('Un réseau de neurones', 'Un réseau de neurones est une fonction qui a des millions de paramètres réglables. On lui donne un plateau, il calcule des nombres. On l’entraîne sur des exemples : on règle ses paramètres, petit à petit, pour réduire l’écart entre ce qu’il calcule et ce qu’il aurait dû calculer.');
+      c.step('Un réseau de neurones', 'Un réseau de neurones est une fonction qui a des millions de paramètres réglables. On lui donne un plateau, il calcule des nombres. On l’entraîne sur des exemples : on règle ses paramètres, petit à petit, pour réduire l’écart entre ce qu’il calcule et ce qu’il aurait dû calculer. Le chapitre suivant montre comment.');
       c.step('La politique', 'Le réseau de politique donne, pour chaque coup, une probabilité : celle d’être un bon coup. Dans la recherche, elle remplace la confiance a priori P, égale pour tous jusqu’ici. La recherche se concentre sur quelques coups plausibles : l’arbre devient moins large.');
       c.step('La valeur', 'Le réseau de valeur estime, à partir d’une position, qui va gagner : un nombre entre −1 et +1. Dans la recherche, il remplace les parties au hasard. On n’a plus besoin de finir la partie pour juger une feuille : l’arbre peut rester moins profond.');
       c.question('q-roles', 'Dans la recherche d’AlphaZero, le réseau de valeur remplace…', ['les parties jouées au hasard', 'le choix du coup le plus visité', 'les règles du jeu', 'la rétropropagation'], 'La feuille est estimée par le réseau de valeur au lieu d’une partie au hasard.');
       c.step('Dans notre miniature', `À la place des réseaux, notre programme range dans deux tables, pour chaque position rencontrée, une politique et une valeur. Les positions symétriques partagent une entrée, comme dans AlphaGo Zero. Une table ne généralise pas : une position jamais vue n’a rien. Un réseau, lui, devine à partir de positions semblables ; c’est sa force au go.`);
+    });
+    c.chapter('Régler les paramètres : la descente de gradient', () => {
+      c.stage('selfplay');
+      c.diagram('slope1d');
+      c.ask('q-gd', 'Comment règle-t-on les millions de paramètres d’un réseau de neurones ?', ['petit à petit, en suivant la pente de l’erreur', 'en essayant toutes les combinaisons possibles', 'à la main, un par un, par des experts', 'au hasard, en gardant le meilleur tirage'], 'On calcule dans quel sens chaque paramètre fait baisser l’erreur, et on le déplace un peu dans ce sens.');
+      c.step('Mesurer l’erreur', 'Pour entraîner un réseau, on compare ce qu’il calcule à ce qu’il aurait dû calculer, sur de nombreux exemples. La fonction de perte résume ces écarts en un seul nombre, par exemple la moyenne de leurs carrés. Entraîner le réseau, c’est chercher les paramètres qui rendent ce nombre le plus petit possible.');
+      c.step('Suivre la pente', 'Le gradient donne, pour chaque paramètre, la pente de l’erreur : de combien elle change quand ce paramètre augmente un peu. La descente de gradient recule chaque paramètre dans le sens où l’erreur diminue, d’un pas proportionnel à la pente : paramètre ← paramètre − η × pente. Le nombre η est le taux d’apprentissage.', {
+        tools: ['T4', 'T6'],
+        code: 'w = w - eta * pente     // pente = dL/dw',
+      });
+      c.diagram('descent');
+      c.step('Un réseau de valeur à deux paramètres', `Construisons un réseau de valeur minuscule pour le morpion : v = a × x + b, où x compte les menaces du joueur qui doit jouer (deux symboles alignés et une case libre) moins celles de son adversaire. On l’entraîne sur les ${fr(NDATA)} positions non finies, avec leur valeur minimax. Le meilleur réglage est a ≈ ${fr(VBEST.a, 2)}, b ≈ ${fr(VBEST.b, 2)}.`, {
+        claims: [{ text: 'la descente nominale atteint ce minimum', check: () => GD_NOM.outcome === 'converged' && Math.abs(GD_NOM.path[GD_NOM.path.length - 1].a - VBEST.a) < 0.02 }],
+      });
+      c.experiment({
+        title: 'Le taux d’apprentissage', prompt: `Changez η et regardez les ${GD.steps} pas de la descente sur la carte de l’erreur.`,
+        predict: { question: 'Avec un taux d’apprentissage trop grand, la descente…', choices: ['s’éloigne du minimum', 'arrive plus vite au minimum', 'reste au point de départ'], answer: 0 },
+        controls: [{ type: 'range', key: 'eta', label: 'taux d’apprentissage η', min: 0.005, max: 1, step: 0.005, log: true, fmt: dec(3) }],
+        goals: [
+          { label: 'Trouvez un η trop petit : le minimum n’est pas atteint', test: ({ v }) => gdOf(v).outcome === 'slow' },
+          { label: 'Trouvez un η trop grand : la descente diverge', test: ({ v }) => gdOf(v).outcome === 'diverged' },
+          { label: 'Trouvez un η qui atteint le minimum', test: ({ v }) => gdOf(v).outcome === 'converged' },
+        ],
+        seq: true, conclusion: `Jusqu’à 0,05 environ, les pas sont trop petits : ${GD.steps} pas ne suffisent pas. De 0,1 à 0,65, la descente atteint le minimum ; vers 0,6, elle zigzague de part et d’autre avant de s’y poser. Au-delà de 0,69, chaque pas dépasse le minimum de plus en plus loin : l’erreur explose.`,
+      });
+      c.exercise('gdStep', 'Dans l’atelier, calculez un pas de descente de gradient à la main.');
+      c.step('Dans AlphaZero', 'AlphaZero règle ainsi les millions de paramètres de son réseau. Sa fonction de perte additionne l’erreur de la valeur (par rapport au résultat de la partie) et celle de la politique (par rapport aux visites de la recherche). Chaque pas utilise un lot de positions tirées au hasard dans les parties récentes : c’est une descente de gradient stochastique.');
+      c.step('Et dans notre miniature', `Nos tables apprennent par la même règle. Pour une seule entrée, l’erreur (valeur − cible)² / 2 a pour pente valeur − cible ; un pas de descente donne valeur ← valeur + η × (cible − valeur). C’est exactement la mise à jour des tables, avec η = 1/n puis ${fr(TRAIN.lr, 2)}.`);
+      c.question('q-eta', 'Une descente de gradient voit son erreur baisser, mais très lentement. Que changer ?', ['augmenter un peu le taux d’apprentissage', 'diminuer le taux d’apprentissage', 'changer le signe des pas', 'arrêter, le minimum est atteint'], 'Des pas trop petits avancent lentement ; il faut les agrandir, sans dépasser la limite où la descente diverge.');
+      c.explain('e-gd', 'Expliquez pourquoi un taux d’apprentissage trop grand fait diverger la descente de gradient.', 'Chaque pas déplace le paramètre de η fois la pente. Près du minimum, la pente change de signe : un pas trop grand passe de l’autre côté et va plus loin du minimum qu’au départ. La pente y est alors plus forte, donc le pas suivant est encore plus grand, dans l’autre sens : l’erreur grandit à chaque pas au lieu de diminuer.');
     });
     c.chapter('AlphaGo', () => {
       c.stage('go');
@@ -496,7 +569,7 @@ const course = defineCourse({
       c.stage('selfplay');
       c.diagram('loop');
       c.ask('q-self', 'Un programme qui ne joue que contre lui-même peut-il dépasser son niveau de départ ?', ['oui, sa recherche joue mieux que sa politique', 'non, il répète toujours ses erreurs', 'non, il lui faut un adversaire plus fort', 'oui, mais seulement au morpion'], 'La recherche, guidée par la politique, trouve de meilleurs coups qu’elle : la politique peut apprendre de la recherche.');
-      c.step('La boucle d’AlphaZero', `À chaque coup d’une partie d’auto-jeu, le programme fait une recherche avec son réseau (${fr(FACTS.azSims)} simulations par coup pour AlphaZero, ${fr(TRAIN.sims)} dans notre miniature), puis joue. À la fin de la partie, chaque position reçoit deux cibles : pour la valeur, le résultat final ; pour la politique, la part des visites de chaque coup. Le réseau apprend à s’en rapprocher.`);
+      c.step('La boucle d’AlphaZero', `À chaque coup d’une partie d’auto-jeu, le programme fait une recherche avec son réseau (${fr(FACTS.azSims)} simulations par coup pour AlphaZero, ${fr(TRAIN.sims)} dans notre miniature), puis joue. À la fin de la partie, chaque position reçoit deux cibles : pour la valeur, le résultat final ; pour la politique, la part des visites de chaque coup. Le réseau s’en rapproche par descente de gradient.`);
       c.step('Pourquoi le programme progresse', 'La recherche guidée par la politique joue mieux que la politique seule : la part des visites est une meilleure politique que celle de départ. En apprenant à imiter sa propre recherche, la politique s’améliore ; la recherche qu’elle guide s’améliore à son tour. La valeur, elle, apprend des parties de mieux en mieux jouées.');
       c.order('q-loop', 'Remettez dans l’ordre ce qui se passe pour une partie d’auto-jeu.', ['une recherche à chaque coup, guidée par le réseau', 'le coup est joué selon les visites', 'la partie se termine sur un résultat', 'le réseau apprend les visites et le résultat'], 'La recherche choisit les coups ; à la fin, le résultat et les visites deviennent les exemples d’entraînement.');
       c.step('Varier les parties', 'Pendant l’entraînement, AlphaZero ajoute du hasard : un bruit d’exploration sur les probabilités de la racine, et des coups tirés selon leurs visites plutôt que toujours le plus visité. Sans ce hasard, le programme rejouerait les mêmes parties et n’apprendrait rien des positions qu’il ne rencontre jamais.');
@@ -593,10 +666,40 @@ const course = defineCourse({
       c.exercise('sgsSort', 'Dans l’atelier, dites quels états de départ SGS tire souvent.');
       c.explain('e-sgs', 'Expliquez pourquoi, avec une récompense binaire, il faut faire commencer des épisodes ailleurs qu’au début de la tâche, et pourquoi SGS favorise les états réussis environ une fois sur deux.', 'Avec une récompense binaire, un épisode n’apprend quelque chose que si l’on peut comparer des réussites et des échecs. Depuis le début de la tâche, le robot échoue toujours : aucun signal. Près du but, il réussit parfois, et il apprend les dernières sous-étapes, puis les précédentes. Un état réussi une fois sur deux a l’issue la plus incertaine : c’est là qu’un épisode apprend le plus. Les états maîtrisés ou impossibles apprennent peu.');
     });
+    c.chapter('Les difficultés de l’apprentissage par renforcement', () => {
+      c.stage('robot');
+      c.diagram('credit');
+      c.ask('q-rlhard', 'Deux entraînements identiques, sauf le hasard des épisodes, finissent-ils toujours au même endroit ?', ['non, l’un peut réussir et l’autre s’effondrer', 'oui, le réglage décide de tout', 'oui, mais l’un met plus de temps', 'non, mais l’écart est toujours minime'], 'L’apprentissage dépend des épisodes tirés : avec de petits lots et de grands pas, le hasard peut tout faire basculer.');
+      c.step('Des difficultés déjà rencontrées', 'Le cours en a déjà croisé trois : sans exploration, l’auto-jeu rejoue les mêmes parties ; avec une récompense rare, aucun épisode ne réussit ; avec une récompense mal posée, le robot apprend autre chose que la tâche. Ce chapitre en ajoute trois autres : l’attribution du mérite, l’instabilité de l’apprentissage et son coût en expérience.');
+      c.step('Qui a fait échouer l’essai ?', 'Avec une récompense binaire, un épisode raté ne dit pas quelle action a causé l’échec : c’est le problème de l’attribution du mérite. La mise à jour rend moins probables toutes les actions de l’épisode, même celles qui avaient réussi. Seule la moyenne de nombreux épisodes sépare les bonnes actions des mauvaises. Plus les épisodes sont longs, plus il en faut.');
+      c.diagram('seeds');
+      c.step('Apprendre d’épisodes tirés au hasard', `Jusqu’ici, notre robot apprenait « en moyenne ». Un vrai robot apprend d’épisodes joués : après chaque lot d’épisodes, chaque sous-étape devient plus probable si elle figurait dans des épisodes meilleurs que la moyenne du lot. Un lot aux issues toutes égales n’apprend rien : c’est le P(1 − P) vu plus haut. Le schéma montre ${RL_NOM.runs.length} entraînements qui ne diffèrent que par le hasard de leurs ${fr(RL.episodes)} épisodes.`);
+      c.experiment({
+        title: 'Le pas et la taille des lots', prompt: 'Changez la taille des pas de mise à jour et le nombre d’épisodes par lot. Le budget reste de 3 200 épisodes.',
+        predict: { question: 'Avec des lots de 4 épisodes et des pas énormes, les huit essais…', choices: ['ne finissent pas tous au même endroit', 'réussissent tous plus vite', 'restent tous bloqués au départ'], answer: 0 },
+        controls: [
+          { type: 'choice', key: 'lr', label: 'taille des pas', options: [1, 4, 16, 64, 256].map((x) => ({ label: fr(x), value: x })) },
+          { type: 'choice', key: 'batch', label: 'épisodes par lot', options: [4, 16, 64].map((x) => ({ label: fr(x), value: x })) },
+        ],
+        goals: [
+          { label: 'Trouvez un réglage trop prudent : le budget ne suffit pas', test: ({ v }) => rlOf(v).outcome === 'slow' },
+          { label: 'Trouvez un réglage où au moins un essai s’effondre', test: ({ v }) => rlOf(v).outcome === 'collapse' },
+          { label: 'Trouvez un réglage où les huit essais réussissent', test: ({ v }) => rlOf(v).outcome === 'stable' },
+        ],
+        seq: true, conclusion: `Avec de petits pas et de gros lots, l’apprentissage est sûr mais lent : chaque mise à jour coûte beaucoup d’épisodes. Avec des pas de 256 et des lots de 4, ${fr(RL_BAD.finals.filter((f) => f < 1e-6).length)} essais sur 8 s’effondrent : une mise à jour tirée d’un lot malchanceux rend une sous-étape presque impossible, et plus aucun épisode ne réussit pour la corriger.`,
+      });
+      c.step('L’effondrement', 'En apprentissage supervisé, un mauvais pas se corrige au pas suivant : les exemples restent les mêmes. En renforcement, la politique fabrique ses propres exemples. Si une mise à jour la rend mauvaise, elle ne produit plus que des échecs, dont elle n’apprend rien. C’est pourquoi des méthodes comme PPO, utilisée par SGS, limitent la taille de chaque mise à jour.', {
+        claims: [{ text: 'des effondrements avec de grands pas et de petits lots', check: () => RL_BAD.outcome === 'collapse' && RL_NOM.outcome === 'stable' }],
+      });
+      c.step('Le coût en expérience', `L’apprentissage par renforcement demande énormément d’essais : AlphaGo Zero a joué ${fr(FACTS.zeroGames, 1)} millions de parties. Un vrai bras fait quelques essais par minute ; c’est pourquoi AlphaNIST apprend en simulation. Reste l’écart simulation-réalité : frottements, capteurs, défauts des pièces diffèrent, et une politique parfaite en simulation peut échouer sur le vrai robot.`);
+      c.step('Une récompense mal posée', `Le robot optimise ce qu’on récompense, pas ce qu’on veut : la récompense dense lui a appris à forcer l’écrou. Avec plusieurs tâches, une seule politique doit aussi les concilier : dans AlphaNIST, la politique partagée réussit ${pct1(FACTS.nist.sharedBinary)} avec la récompense binaire, mais ${pct1(FACTS.nist.sharedDense)} avec la dense, contre ${pct1(FACTS.nist.separateDense)} pour des politiques séparées.`);
+      c.exercise('rlSort', 'Dans l’atelier, reconnaissez la difficulté derrière chaque observation.');
+      c.explain('e-collapse', 'Expliquez pourquoi, en apprentissage par renforcement, une mise à jour trop grande peut bloquer définitivement l’apprentissage.', 'La politique produit elle-même les épisodes dont elle apprend. Une mise à jour trop grande, tirée d’un lot malchanceux, peut rendre une action nécessaire presque impossible. Ensuite, presque aucun épisode ne réussit : toutes les récompenses valent 0, aucun épisode n’est meilleur que la moyenne, et le gradient est nul. Rien ne ramène l’action : l’apprentissage s’est effondré. Des pas plus petits ou des lots plus grands réduisent ce risque.');
+    });
     c.chapter('Ce qui émerge', () => {
       c.stage('robot');
       c.step('Des gestes que personne n’a programmés', 'Comme AlphaGo et son coup inattendu, la politique d’AlphaNIST trouve des comportements émergents : elle repose une pièce et la reprend pour mieux l’orienter, se sert du plateau pour faire tourner un connecteur, fait rouler un écrou posé sur sa tranche, pousse une tige du bout d’un doigt avant de la saisir.');
-      c.step('Les limites', `Les résultats d’AlphaNIST sont mesurés en simulation, sur les tâches de l’entraînement ; passer à un vrai robot est un autre défi. Pour des enchaînements de dix pièces, la page du projet rapporte ${FACTS.nistTenParts} essais réussis, avec une politique entraînée à part. Notre miniature est un jouet : une chaîne de cinq sous-étapes, entraînée en moyenne, sans capteurs ni physique.`);
+      c.step('Les limites', `Les résultats d’AlphaNIST sont mesurés en simulation, sur les tâches de l’entraînement : l’écart simulation-réalité reste à franchir. Pour des enchaînements de dix pièces, la page du projet rapporte ${FACTS.nistTenParts} essais réussis, avec une politique entraînée à part. Notre miniature est un jouet : une chaîne de cinq sous-étapes, entraînée en moyenne, sans capteurs ni physique.`);
       c.question('q-emerge', 'Pourquoi une récompense binaire laisse-t-elle apparaître des gestes inattendus ?', ['seul le résultat compte, pas la manière', 'elle récompense chaque geste utile', 'elle copie les gestes des humains', 'elle interdit les gestes habituels'], 'Tout geste qui mène plus souvent au succès est renforcé, même si personne ne l’avait imaginé.');
     });
     c.clinicCase({

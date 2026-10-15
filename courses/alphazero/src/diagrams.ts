@@ -5,7 +5,7 @@ import { fr, pct, type DiagramEnv } from '@coursekit/core';
 import { CC, DH, DW, alpha, arrow, axes, cached, cachedMaybe, clamp, dot, line, panel, text } from '@coursekit/diagrams';
 import {
   FACTS, FORK, LEVELS, MCTS_NOMINAL, ROBOT, SAMPLERS, STEPS, TRAIN, bestMoves, checkpointAt, countTree, legal, mctsOf,
-  minimax, play, playoutRun, robotAt, robotOf, rolloutEval, search, sgsWeight, trainOf, treeLog10, eloWin, type Board,
+  minimax, play, playoutRun, robotAt, robotOf, rolloutEval, search, sgsWeight, trainOf, treeLog10, eloWin, GD, GD_OUTCOME, RL, RL_OUTCOME, gdOf, rlOf, valueBest, valueLoss, type Board,
 } from './model.ts';
 
 type Ctx = CanvasRenderingContext2D;
@@ -450,7 +450,121 @@ function nist(ctx: Ctx, e: DiagramEnv): void {
   text(ctx, 'dense : récompenses pour l’approche et l’alignement', 14, 212, CC.dim, 9);
 }
 
+// ------------------------------------------- 18. a slope, in one dimension
+
+/** Gradient descent on L(w) = (w − 3)², from w = 0: each step goes against the slope. `arg`: the learning rate. */
+function slope1d(ctx: Ctx, e: DiagramEnv): void {
+  const eta = e.arg !== undefined ? Number(e.arg) : 0.2;
+  const x0 = 46, y0 = 52, w = 300, h = 136;
+  axes2(ctx, x0, y0, w, h, 'paramètre w', 'erreur');
+  const X = (v: number) => x0 + ((v + 1) / 8) * w, Y = (L: number) => y0 + h - (L / 16) * h;
+  for (const v of [0, 3, 6]) text(ctx, fr(v), X(v), y0 + h + 9, CC.dim, 9, 'center');
+  ctx.save(); ctx.beginPath(); ctx.rect(x0, y0 - 4, w, h + 4); ctx.clip();
+  ctx.strokeStyle = CC.blue; ctx.lineWidth = 2; ctx.beginPath();
+  for (let v = -1; v <= 7; v += 0.05) { const yy = Y((v - 3) ** 2); v === -1 ? ctx.moveTo(X(v), yy) : ctx.lineTo(X(v), yy); }
+  ctx.stroke();
+  const pts: number[] = [0];
+  for (let k = 0; k < 8; k++) { const v = pts[pts.length - 1]; pts.push(v - eta * 2 * (v - 3)); }
+  const shown = Math.min(pts.length, 1 + Math.floor(e.t / 0.8));
+  for (let k = 1; k < shown; k++) arrow(ctx, X(pts[k - 1]), Y((pts[k - 1] - 3) ** 2), X(pts[k]), Y((pts[k] - 3) ** 2), CC.acc, 1.5, 5);
+  for (let k = 0; k < shown; k++) dot(ctx, X(pts[k]), Y((pts[k] - 3) ** 2), k === shown - 1 ? CC.fg : CC.acc, 3);
+  ctx.restore();
+  const v = pts[shown - 1];
+  text(ctx, `taux d’apprentissage η = ${fr(eta, 2)} · pas ${shown - 1}`, x0, 12, CC.acc, 11);
+  text(ctx, `w = ${fr(v, 2)} · pente 2(w − 3) = ${fr(2 * (v - 3), 2)} · nouveau w = w − η × pente`, x0, 27, CC.dim, 9);
+}
+
+// ------------------------------------------- 19. descent on the error map
+
+const AMIN = -0.4, AMAX = 1.4, BMIN = -0.2, BMAX = 1.6;
+/** The error of the small value network over (a, b), and the path of gradient descent for the current η. */
+function descent(ctx: Ctx, e: DiagramEnv): void {
+  const run = gdOf(e.v);
+  const best = valueBest();
+  const mx = 14, my = 30, S = 190;
+  const X = (a: number) => mx + ((a - AMIN) / (AMAX - AMIN)) * S, Y = (b: number) => my + S - ((b - BMIN) / (BMAX - BMIN)) * S;
+  const grid = cached('loss-grid', () => {
+    const n = 38, out: number[][] = [];
+    for (let i = 0; i < n; i++) { out.push([]); for (let j = 0; j < n; j++) out[i].push(valueLoss(AMIN + ((i + 0.5) / n) * (AMAX - AMIN), BMIN + ((j + 0.5) / n) * (BMAX - BMIN))); }
+    return out;
+  });
+  const n = grid.length, cs = S / n;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const k = clamp((Math.log(grid[i][j]) - Math.log(best.L)) / 2.2, 0, 1);
+    ctx.fillStyle = alpha(CC.blue, 0.55 * (1 - k) + 0.04);
+    ctx.fillRect(mx + i * cs, my + S - (j + 1) * cs, cs + 0.5, cs + 0.5);
+  }
+  panel(ctx, mx, my, S, S, CC.faint, null, 2);
+  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, S, S); ctx.clip();
+  const shown = Math.min(run.path.length, 1 + Math.floor(e.t / 0.25));
+  for (let k = 1; k < shown; k++) line(ctx, X(run.path[k - 1].a), Y(run.path[k - 1].b), X(run.path[k].a), Y(run.path[k].b), CC.acc, 1.5);
+  for (let k = 0; k < shown; k++) dot(ctx, X(run.path[k].a), Y(run.path[k].b), CC.acc, 2.2);
+  ctx.restore();
+  dot(ctx, X(best.a), Y(best.b), CC.green, 4);
+  text(ctx, 'a (poids des menaces)', mx, my + S + 12, CC.dim, 9);
+  text(ctx, 'b ↑', mx + 2, my - 8, CC.dim, 9);
+  const last = run.path[shown - 1];
+  const xr = 222, col = run.outcome === 'converged' ? CC.green : CC.red;
+  text(ctx, `η = ${fr(e.v.eta ?? GD.eta, 3)}`, xr, 40, CC.acc, 12);
+  text(ctx, `pas ${shown - 1} sur ${GD.steps}`, xr, 60, CC.dim, 10);
+  text(ctx, `erreur : ${last.L < 1000 ? fr(last.L, 3) : pow10(Math.log10(last.L))}`, xr, 80, CC.fg, 10);
+  text(ctx, `minimum : ${fr(best.L, 3)}`, xr, 96, CC.green, 10);
+  text(ctx, GD_OUTCOME[run.outcome], xr, 120, col, 11);
+  text(ctx, 'fond clair : erreur faible', xr, 168, CC.dim, 9);
+  text(ctx, 'point vert : le minimum', xr, 182, CC.dim, 9);
+  text(ctx, 'v = a × (menaces) + b', xr, 206, CC.fg, 10, 'left', true);
+}
+
+// --------------------------------------------- 20. eight runs of REINFORCE
+
+/** Success on the whole task along the episodes, for eight runs that differ by luck only. */
+function seeds(ctx: Ctx, e: DiagramEnv): void {
+  const run = rlOf(e.v);
+  const T = run.runs[0].length - 1;
+  const x0 = 46, y0 = 50, w = 300, h = 128;
+  axes2(ctx, x0, y0, w, h, 'épisodes', 'succès');
+  const X = (i: number) => x0 + (i / T) * w, Y = (p: number) => y0 + h - p * h;
+  for (const p of [0.5, 1]) { line(ctx, x0, Y(p), x0 + w, Y(p), CC.grid, 1); text(ctx, pct(p), x0 - 4, Y(p), CC.dim, 9, 'right'); }
+  const E = T * run.batch;
+  for (const k of [1000, 2000, 3000]) if (k <= E) text(ctx, fr(k), X(k / run.batch), y0 + h + 9, CC.dim, 9, 'center');
+  const grow = clamp(e.t / 3, 0, 1);
+  run.runs.forEach((c, r) => {
+    const dead = run.finals[r] < 1e-6;
+    ctx.save(); ctx.strokeStyle = dead ? CC.red : alpha(CC.acc, 0.75); ctx.lineWidth = dead ? 2 : 1.3; ctx.beginPath();
+    const last = Math.floor(grow * T);
+    for (let i = 0; i <= last; i++) (i ? ctx.lineTo(X(i), Y(c[i])) : ctx.moveTo(X(i), Y(c[i])));
+    ctx.stroke(); ctx.restore();
+  });
+  const dead = run.finals.filter((f) => f < 1e-6).length;
+  text(ctx, `pas ${fr(e.v.lr ?? RL.lr)} · lots de ${fr(run.batch)} épisodes · ${RL_OUTCOME[run.outcome]}`, x0, 12, run.outcome === 'stable' ? CC.green : CC.red, 10);
+  text(ctx, `huit essais, même réglage, autre hasard · effondrés : ${fr(dead)}`, x0, 27, CC.dim, 9);
+}
+
+// --------------------------------------------- 21. credit assignment
+
+/** One failed episode: every action taken is made less likely, the right ones too. */
+function credit(ctx: Ctx, e: DiagramEnv): void {
+  const ok = [true, true, true, false];
+  const bw = 66, x0 = 24, y = 70;
+  STEPS.forEach((s, i) => {
+    const x = x0 + i * (bw + 4);
+    const done = i < ok.length, good = done && ok[i];
+    panel(ctx, x, y, bw, 34, !done ? CC.faint : good ? CC.green : CC.red, !done ? null : alpha(good ? CC.green : CC.red, 0.12));
+    text(ctx, s, x + bw / 2, y + 11, done ? CC.fg : CC.dim, 9, 'center');
+    text(ctx, !done ? 'pas joué' : good ? 'réussi' : 'raté', x + bw / 2, y + 25, !done ? CC.dim : good ? CC.green : CC.red, 9, 'center');
+    if (done) {
+      const bob = Math.sin(e.t * 3) * 3;
+      arrow(ctx, x + bw / 2, y + 48 + bob, x + bw / 2, y + 76 + bob, CC.pink, 2, 6);
+    }
+  });
+  text(ctx, 'un épisode raté : récompense 0, moins que la moyenne du lot', 24, 30, CC.fg, 10);
+  text(ctx, 'l’essai est entier : il ne dit pas quelle action a causé l’échec', 24, 46, CC.dim, 9);
+  text(ctx, 'flèches : chaque action jouée devient moins probable,', 24, 180, CC.pink, 10);
+  text(ctx, 'y compris les trois qui avaient réussi', 24, 196, CC.pink, 10);
+  text(ctx, 'seule la moyenne de nombreux épisodes sépare les bonnes des mauvaises', 24, 218, CC.dim, 9);
+}
+
 export const DIAGRAMS = {
   tree, explosion, minimax: minimaxDiag, rollouts, phases, puct, strength, nets, alphago, loop, learning, elo, chain, sgs,
-  curriculum, rewards, nist,
+  curriculum, rewards, nist, slope1d, descent, seeds, credit,
 };

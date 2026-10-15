@@ -2,7 +2,7 @@
 // experiments and the clinic cases rely on; change the model, run this again.
 
 import { defineTune } from '@coursekit/tooling';
-import { checkpointAt, mctsOf, robotOf, trainOf, type MctsRun, type RobotRun, type TrainRun } from './model.ts';
+import { checkpointAt, gdOf, mctsOf, rlOf, robotOf, trainOf, valueBest, type MctsRun, type RobotRun, type TrainRun } from './model.ts';
 
 const all = <P, R>(rows: { p: P; r: R }[], keep: (p: P) => boolean, ok: (r: R) => boolean) => rows.filter((x) => keep(x.p)).every((x) => ok(x.r));
 const mcts = (r: MctsRun) => `${r.outcome} (${r.vsPerfect.losses} défaites / ${r.vsPerfect.games})`;
@@ -90,6 +90,29 @@ export default [
       { label: 'récompense binaire (0) : maîtrisé, la pièce est reprise', test: (rows) => rows[0].r.outcome === 'mastered' && rows[0].r.final.x > 0.9 },
       { label: 'à 0,6 et plus : plafonne, ne reprend jamais la pièce (cas d’épreuve)', test: (rows) => all(rows, (p) => p.w >= 0.6, (r) => r.outcome === 'capped' && r.final.x < 0.1) },
       { label: 'un peu de récompense dense (0,05) accélère le début', test: (rows) => robotAt100(rows[1].r) > robotAt100(rows[0].r) },
+    ],
+  }),
+  defineTune({
+    title: 'Descente de gradient (30 pas) : taux d’apprentissage η',
+    grid: { eta: [0.005, 0.01, 0.03, 0.05, 0.1, 0.2, 0.3, 0.5, 0.6, 0.65, 0.7, 0.8, 1] },
+    run: (p) => gdOf(p),
+    show: (r) => { const e = r.path[r.path.length - 1]; return `${r.outcome} · erreur ${e.L.toPrecision(3)} (minimum ${valueBest().L.toFixed(3)}) · a ${e.a.toPrecision(3)} b ${e.b.toPrecision(3)}`; },
+    expect: [
+      { label: 'trop lent jusqu’à 0,03', test: (rows) => all(rows, (p) => p.eta <= 0.03, (r) => r.outcome === 'slow') },
+      { label: 'atteint le minimum de 0,1 à 0,65', test: (rows) => all(rows, (p) => p.eta >= 0.1 && p.eta <= 0.65, (r) => r.outcome === 'converged') },
+      { label: 'diverge à partir de 0,7', test: (rows) => all(rows, (p) => p.eta >= 0.7, (r) => r.outcome === 'diverged') },
+    ],
+  }),
+  defineTune({
+    title: 'REINFORCE, 8 essais de 3 200 épisodes : pas × taille du lot',
+    grid: { lr: [1, 4, 16, 64, 256], batch: [4, 16, 64] },
+    run: (p) => rlOf(p),
+    show: (r) => `${r.outcome} ${r.finals.filter((f) => f < 1e-6).length}/${r.finals.filter((f) => f >= 0.9).length}`,
+    expect: [
+      { label: 'nominal (pas 16, lot de 16) : stable', test: (rows) => rows.find((x) => x.p.lr === 16 && x.p.batch === 16)?.r.outcome === 'stable' },
+      { label: 'pas 1 avec des lots de 16 ou 64 : trop lent', test: (rows) => all(rows, (p) => p.lr === 1 && p.batch >= 16, (r) => r.outcome === 'slow') },
+      { label: 'pas 256 avec des lots de 4 : au moins un essai s’effondre', test: (rows) => rows.find((x) => x.p.lr === 256 && x.p.batch === 4)?.r.outcome === 'collapse' },
+      { label: 'aucun effondrement jusqu’au pas 64', test: (rows) => all(rows, (p) => p.lr <= 64, (r) => r.outcome !== 'collapse') },
     ],
   }),
 ];

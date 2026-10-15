@@ -527,6 +527,127 @@ export const ROBOT_OUTCOME: Record<RobotOutcome, string> = {
 };
 export const SAMPLERS = ['uniforme', 'guidé par le succès', 'tâche complète seule'];
 
+// ----------------------------------------------------- gradient descent
+
+/** Threats of player p: lines with two of its marks and an empty cell. */
+export const threats = (b: Board, p: number): number => LINES.filter((l) => l.filter((i) => b[i] === p).length === 2 && l.some((i) => b[i] === 0)).length;
+
+/** The data of the small value network: every unfinished position, its feature x (threats of the player to move minus the opponent's) and its minimax value z. */
+export const valueData = memo((): { x: number; z: number }[] => {
+  const seen = new Map<string, { x: number; z: number }>();
+  const walk = (b: Board): void => {
+    const k = keyOf(b);
+    if (seen.has(k) || over(b)) return;
+    const me = toMove(b);
+    seen.set(k, { x: threats(b, me) - threats(b, -me), z: minimax(b) });
+    for (const m of legal(b)) walk(play(b, m));
+  };
+  walk(EMPTY);
+  return [...seen.values()];
+}, { key: () => 'data' });
+
+/** The error of the value v = a·x + b: the mean of the squared differences with z. */
+export function valueLoss(a: number, b: number): number {
+  const d = valueData();
+  return d.reduce((s, p) => s + (a * p.x + b - p.z) ** 2, 0) / d.length;
+}
+/** Its gradient: how the error changes when a, then b, increases a little. */
+export function valueGrad(a: number, b: number): [number, number] {
+  const d = valueData();
+  let ga = 0, gb = 0;
+  for (const p of d) { const e = a * p.x + b - p.z; ga += 2 * e * p.x; gb += 2 * e; }
+  return [ga / d.length, gb / d.length];
+}
+/** The best (a, b), by the least-squares formula: what gradient descent should reach. */
+export const valueBest = memo((): { a: number; b: number; L: number } => {
+  const d = valueData(), n = d.length;
+  const mx = d.reduce((s, p) => s + p.x, 0) / n, mz = d.reduce((s, p) => s + p.z, 0) / n;
+  const sxx = d.reduce((s, p) => s + (p.x - mx) ** 2, 0), sxz = d.reduce((s, p) => s + (p.x - mx) * (p.z - mz), 0);
+  const a = sxz / sxx, b = mz - a * mx;
+  return { a, b, L: valueLoss(a, b) };
+}, { key: () => 'best' });
+
+export type GdOutcome = 'converged' | 'slow' | 'diverged';
+export interface GdRun { path: { a: number; b: number; L: number }[]; outcome: GdOutcome }
+export const GD = { eta: 0.3, steps: 30 };
+
+/** Gradient descent from (0, 0) with the learning rate eta: each step moves (a, b) against the gradient. */
+export function descend(eta: number, steps = GD.steps): GdRun {
+  let a = 0, b = 0;
+  const path: GdRun['path'] = [];
+  for (let s = 0; s <= steps; s++) {
+    const L = valueLoss(a, b);
+    path.push({ a, b, L });
+    if (!Number.isFinite(L) || L > 1e6) break;
+    const [ga, gb] = valueGrad(a, b);
+    a -= eta * ga; b -= eta * gb;
+  }
+  const best = valueBest(), end = path[path.length - 1], mid = path[Math.floor((path.length - 1) / 2)];
+  // diverging: the error grows again in the second half of the descent
+  const outcome: GdOutcome = end.L <= best.L * 1.01 ? 'converged' : !(end.L <= mid.L) ? 'diverged' : 'slow';
+  return { path, outcome };
+}
+export const gdOf = memo((v: Record<string, number>): GdRun => descend(v.eta ?? GD.eta), { key: (v) => String(v.eta ?? GD.eta) });
+export const GD_OUTCOME: Record<GdOutcome, string> = { converged: 'atteint le minimum', slow: 'trop lent', diverged: 'diverge' };
+
+// ---------------------------------------------- sampled reinforcement learning
+
+export interface RlOpts { lr: number; batch: number; seed: number; episodes: number }
+export const RL: RlOpts = { lr: 16, batch: 16, seed: 1, episodes: 3200 };
+export const RL_SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+/**
+ * The robot's chain learnt from sampled episodes (REINFORCE with a baseline):
+ * each sub-step is an action, right with probability q = σ(θ). An episode
+ * starts at a level drawn uniformly and gets 1 if every action left is right.
+ * After each batch, θ moves by lr × (R − mean R) × (action − q), averaged:
+ * the actions of the episodes better than the batch are made more likely,
+ * those of the worse ones less likely, the right ones included.
+ */
+export function reinforce(p: Partial<RlOpts> = {}): { curve: number[]; batch: number } {
+  const o = { ...RL, ...p };
+  const r = rng(o.seed);
+  const sig = (x: number) => 1 / (1 + Math.exp(-x));
+  const n = STEPS.length;
+  const th = Array(n).fill(Math.log(ROBOT.q0 / (1 - ROBOT.q0)));
+  const curve: number[] = [];
+  const iters = Math.round(o.episodes / o.batch);
+  for (let it = 0; it <= iters; it++) {
+    const q = th.map(sig);
+    curve.push(q.reduce((s, x) => s * x, 1));
+    if (it === iters) break;
+    const eps: { a: number[]; R: number }[] = [];
+    for (let k = 0; k < o.batch; k++) {
+      const j = Math.floor(r() * n);
+      const a: number[] = [];
+      let R = 1;
+      for (let i = n - 1 - j; i < n; i++) { const ai = r() < q[i] ? 1 : 0; a[i] = ai; if (!ai) { R = 0; break; } }
+      eps.push({ a, R });
+    }
+    const base = eps.reduce((s, e) => s + e.R, 0) / o.batch;
+    for (let i = 0; i < n; i++) {
+      let g = 0;
+      for (const e of eps) if (e.a[i] !== undefined) g += (e.R - base) * (e.a[i] - q[i]);
+      th[i] = Math.max(-30, Math.min(30, th[i] + (o.lr * g) / o.batch));
+    }
+  }
+  return { curve, batch: o.batch };
+}
+
+export type RlOutcome = 'stable' | 'slow' | 'collapse';
+export interface RlRun { runs: number[][]; batch: number; finals: number[]; outcome: RlOutcome }
+/** Eight runs that differ only by the luck of their episodes. */
+export const rlOf = memo((v: Record<string, number>): RlRun => {
+  const lr = v.lr ?? RL.lr, batch = Math.round(v.batch ?? RL.batch);
+  const runs = RL_SEEDS.map((seed) => reinforce({ lr, batch, seed }).curve);
+  const finals = runs.map((c) => c[c.length - 1]);
+  const sorted = [...finals].sort((x, y) => x - y);
+  // collapsed: a sub-step became almost impossible (far below its start), and no episode succeeds any more
+  const outcome: RlOutcome = finals.some((f) => f < 1e-6) ? 'collapse' : sorted[sorted.length / 2] < 0.8 ? 'slow' : 'stable';
+  return { runs, batch, finals, outcome };
+}, { key: (v) => `${v.lr ?? RL.lr}|${Math.round(v.batch ?? RL.batch)}` });
+export const RL_OUTCOME: Record<RlOutcome, string> = { stable: 'les huit essais réussissent', slow: 'trop lent', collapse: 'au moins un essai s’effondre' };
+
 // ------------------------------------------------------------ the model
 
 export const model: DomainModel = {
@@ -539,6 +660,9 @@ export const model: DomainModel = {
     { name: 'la recherche nominale (1 600 simulations) ne perd pas contre le joueur parfait', run: () => (mctsOf({}).outcome === 'solid' ? null : MCTS_OUTCOME[mctsOf({}).outcome]) },
     { name: 'l’auto-jeu nominal mène à un joueur qui ne perd plus', run: () => (trainOf({}).outcome === 'unbeatable' ? null : `défaites ${checkpointAt(trainOf({}), 1e9).searchLoss}`) },
     { name: 'le robot nominal (SGS, récompense binaire) maîtrise la tâche complète', run: () => (robotOf({}).outcome === 'mastered' ? null : ROBOT_OUTCOME[robotOf({}).outcome]) },
+    { name: 'la descente de gradient nominale atteint le minimum des moindres carrés', run: () => { const r = gdOf({}); const e = r.path[r.path.length - 1]; return r.outcome === 'converged' && Math.abs(e.a - valueBest().a) < 0.02 ? null : `${r.outcome}, a = ${e.a.toFixed(3)} au lieu de ${valueBest().a.toFixed(3)}`; } },
+    { name: 'au minimum, le gradient est nul', run: () => { const b = valueBest(); const g = valueGrad(b.a, b.b); return Math.hypot(g[0], g[1]) < 1e-9 ? null : `gradient ${g}`; } },
+    { name: 'REINFORCE nominal : les huit essais réussissent', run: () => (rlOf({}).outcome === 'stable' ? null : RL_OUTCOME[rlOf({}).outcome]) },
     { name: 'le succès d’une chaîne est le produit des sous-étapes', run: () => (Math.abs(successByLevel([0.5, 0.5, 0.5, 0.5, 0.5])[4] - 0.5 ** 5) < 1e-12 ? null : 'produit faux') },
   ],
   countTree, minimax, search, train, trainRobot,
