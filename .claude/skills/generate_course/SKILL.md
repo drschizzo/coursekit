@@ -7,8 +7,12 @@ description: Génère un cours interactif complet avec la bibliothèque courseki
 
 Produit un projet de cours coursekit prêt à être suivi : un modèle exécutable du sujet, des
 schémas et une scène qui le montrent, un contenu séquentiel (étapes, questions, expériences,
-explications écrites, exercices, cas cliniques, tests avant/après), vérifié par `coursekit check`
-et relu dans le navigateur.
+explications écrites, exercices, cas cliniques, tests avant/après), vérifié par `coursekit check`,
+validé contre une source indépendante et relu dans le navigateur.
+
+Viser un cours **plus profond, pas plus gros** : peu d’idées, reprises sous plusieurs angles,
+et des résultats qui tiennent quand on change la graine ou l’implémentation. Exemple complet :
+`courses/alphazero` (README, `validation/README.md`, `src/tune.ts`).
 
 Entrée : le sujet, en langage naturel. Le reste a des valeurs par défaut.
 
@@ -31,11 +35,24 @@ la propulsion ? l’histoire spatiale ?).
 Écrire (pour soi, dans le carnet de travail) :
 
 - **La question centrale** à laquelle le cours répond, en une phrase.
-- **La carte des notions** : 10 à 20 notions, leurs dépendances, l’ordre d’introduction.
+- **Les idées-clés** : 4 à 6 concepts seuils (ceux qui changent la façon de voir le sujet),
+  chacun repris dans au moins deux modules. Le README du cours les nomme.
+- **La carte des notions** : 10 à 20 notions, leurs dépendances, l’ordre d’introduction. Chaque
+  notion sert une idée-clé ; couper les faits décoratifs (dates, records, anecdotes) qui n’en
+  servent aucune.
 - **Les idées fausses courantes** (au moins 5) : chacune deviendra une question « avant » du
   test, une question posée avant l’explication (`c.ask`) ou un cas clinique.
 - **Les outils mathématiques ou autres** nécessaires : ceux de `MATH_CAPSULES` (T1–T8) et ceux à
   écrire (une fiche = 3 étapes + 2 questions).
+
+### Les sources
+
+- Pour toute méthode publiée que le modèle reproduit, lire la **source primaire** (l’article,
+  pas un résumé) et en reprendre la formule exacte et les hyperparamètres ; citer la section.
+- Chaque chiffre publié va dans `FACTS` avec sa source en commentaire (auteur, année, section).
+  Ces chiffres sont cités, jamais recalculés.
+- Une source faible (page de projet sans article ni auteurs, billet non relu) est signalée
+  comme telle dans le cours, à l’endroit où on s’en sert.
 
 ### Le modèle exécutable
 
@@ -53,6 +70,9 @@ qui fonctionne.**
 
 Le modèle est une petite bibliothèque TypeScript pure (pas de DOM), 150 à 400 lignes, que les
 schémas, la scène, les expériences, les exercices et les chiffres du texte appellent tous.
+Préférer une **version échantillonnée fidèle** de l’algorithme (les mêmes étapes, en petit) à un
+modèle « en moyenne » inventé ; aucune constante ad hoc sans justification écrite à côté
+(source, loi, ou réglage documenté dans `tune.ts`). Tout aléa passe par un générateur à graine.
 Si le cours enseigne à programmer le mécanisme (« comment fonctionne un moteur physique »), les
 fonctions centrales du modèle deviennent des exercices de code et la page d’assemblage fait
 tourner les fonctions de l’élève ensemble. Sinon, les exercices sont des calculs guidés, des
@@ -62,16 +82,20 @@ classements et des mises en ordre.
 
 - 3 à 5 modules `core` + un module `exam`. Chaque module : un titre, un `pitch` d’une phrase,
   2 ou 3 `goals` **évaluables** (chacun vérifié par au moins une question, une expérience ou un
-  exercice), un `summary` de 3 ou 4 phrases.
+  exercice), un `summary` de 3 ou 4 phrases, un **budget de durée** (45 à 60 min) et les
+  idées-clés qu’il reprend. Un module qui dépasse son budget perd des étapes, pas des idées.
 - 2 à 4 chapitres par module ; 2 à 5 étapes par chapitre.
 - Pour chaque chapitre, choisir : le schéma, la scène, la question posée avant l’explication,
   l’expérience (avec prédiction), la question de vérification, l’exercice éventuel.
 - Une explication écrite (`c.explain`) par module au moins, avec une réponse modèle complète.
 - 2 cas cliniques à la fin du dernier module, 1 cas d’épreuve dans le module `exam` : un réglage
   fautif → un symptôme observable → 3 causes possibles → correction → justification.
-- Tests : 3 questions d’outils (`tools`, chacune liée à une fiche), 5 questions « avant » (`pre`)
-  sur les idées fausses, 5 questions « après » (`post`) appariées une à une (`pair`), posées
-  dans une autre situation.
+- Au moins un **diagnostic différentiel** : le même symptôme, deux causes, départagées par une
+  preuve que l’élève produit (plusieurs graines, un balayage, une mesure). Exemple : un robot qui
+  plafonne par récompense mal façonnée (à chaque graine) ou par effondrement (à certaines).
+- Tests : 3 questions d’outils (`tools`, chacune liée à une fiche), 5 questions « avant » (`pre`),
+  chacune liée à une idée fausse et à une idée-clé, 5 questions « après » (`post`) appariées une
+  à une (`pair`), posées dans une autre situation.
 
 ## 3. Créer le projet
 
@@ -93,7 +117,9 @@ référence du format est `docs/ecrire-un-cours.md` ; celle de l’API, `docs/re
 ## 4. Écrire et régler le modèle — avant tout contenu
 
 1. Écrire `model.ts` : constantes, fonctions pures, une fonction de simulation qui renvoie des
-   échantillons, des événements et une **issue** classée (`'orbit' | 'crash' | …`).
+   échantillons, des événements et une **issue** classée (`'orbit' | 'crash' | …`). Les seuils
+   qui définissent les issues sont des constantes du modèle, lues par les schémas, la scène et
+   le texte : une seule source de vérité.
 2. Ajouter `model: DomainModel` avec des `checks` : une loi connue (cas limite exact), un ordre
    de grandeur réel, et **l’issue du réglage nominal**.
 3. Écrire `src/tune.ts` avec `defineTune({ grid, run, show, expect })` et le lancer
@@ -104,11 +130,27 @@ référence du format est `docs/ecrire-un-cours.md` ; celle de l’API, `docs/re
    - un échec distinct de chaque côté (trop peu / trop), avec un symptôme visible ;
    - pour chaque cas clinique, un réglage fautif dont le symptôme ne se confond pas avec celui
      d’un autre réglage.
+
+   Un modèle aléatoire se règle sur **au moins 4 graines** : une fenêtre n’est retenue que si
+   elle tient pour chaque graine, ou pour une proportion annoncée (« au moins 4 graines sur
+   5 »), et le cours dit cette proportion. Un résultat de match se donne avec son intervalle de
+   confiance (Wilson à 95 %), jamais seul.
 4. Écrire chaque fenêtre dans `expect` du fichier de réglage, et ajouter une `check` du modèle
    pour l’issue nominale.
 5. Envelopper la simulation partagée par la scène et les schémas dans `memo(...)`.
+6. **Valider contre une source indépendante**, pour chaque partie du modèle qui le permet (au
+   moins une) : une implémentation tierce (ex. OpenSpiel), une solution exacte ou un tableau
+   publié. Dans `validation/` : un `README.md` (ce qui est comparé, le protocole, le tableau des
+   résultats, ce que la comparaison a corrigé, comment reproduire, ce qui n’est pas couvert), le
+   script et ses résultats bruts. Recopier les résultats de référence dans `src/` et ajouter une
+   `check` qui compare (par exemple : les intervalles se recouvrent). Un désaccord est un
+   signal, pas un bruit : en chercher la cause (dans `courses/alphazero`, il a révélé un biais
+   d’ordre des coups) avant de toucher aux paramètres.
 
-Ne pas passer à l’étape 5 tant que le balayage ne donne pas ces fenêtres.
+**Honnêteté.** Si le jouet ne reproduit pas un effet de la source (ex. SGS peu sensible à la
+cible), le cours le dit et explique pourquoi, au lieu de forcer les paramètres.
+
+Ne pas passer à la section 5 tant que le balayage ne donne pas ces fenêtres sur toutes les graines.
 
 ## 5. Schémas et scène
 
@@ -134,8 +176,12 @@ Le contenu s’écrit dans l’ordre de lecture avec le constructeur (`c.module`
 - **Ton.** Clair, précis, pédagogique. Pas de formules choc, pas d’accroche, pas de point
   d’exclamation, pas de « incroyable », « magique », « le secret »… Une phrase dit une chose.
 - **Une idée par étape**, 75 mots au plus. Le titre nomme l’idée.
-- **Chiffres calculés.** Tout chiffre du texte vient du modèle (gabarit `${fr(...)}`) et toute
-  affirmation chiffrée importante porte une `claim` vérifiée par le modèle.
+- **Chiffres calculés.** Tout résultat du texte vient du modèle (gabarit `${fr(...)}`) et toute
+  affirmation chiffrée importante porte une `claim` vérifiée par le modèle. Les données d’un
+  énoncé (« 100 parties », « c = 5 ») peuvent s’écrire ; les résultats, jamais.
+- **Calcul léger dans le texte.** Les gabarits de texte sont évalués au chargement : pas
+  d’entraînement ni de balayage dedans. Un résultat coûteux s’énonce en mots et se vérifie
+  dans une `claim` (évaluée par `coursekit check`), ou se calcule à la demande dans un schéma.
 - **Glossaire.** Chaque terme technique a une entrée avec le `module` qui l’introduit ; il
   n’apparaît pas dans un texte avant ce module (le vérificateur le contrôle).
 - **Questions.** La bonne réponse est écrite en premier (le constructeur la déplace). Les
@@ -165,29 +211,41 @@ Le contenu s’écrit dans l’ordre de lecture avec le constructeur (`c.module`
    intégré :
    - ouvrir `/?shots` : la grille de tous les schémas, aux valeurs du fil du cours et aux
      bornes des expériences ; chercher les valeurs absurdes (le vérificateur ne lit pas le sens) ;
+   - mesurer le chargement : la page est utilisable en moins de 2 s ; sinon, chercher le calcul
+     lourd exécuté à l’import (gabarits de texte, constantes du modèle) ;
    - parcourir chaque chapitre avec `window.course.goto(chapitre, étape)` (les pauses précédentes
      comptent comme faites ; `window.course.pauses(false)` pour toutes les passer) ; capturer la
-     scène et le schéma, sur un écran large et un écran étroit ;
+     scène et le schéma, sur un écran large et sur un écran étroit (la scène et ses grandeurs
+     restent lisibles dans `safe`) ;
    - ouvrir l’atelier : faire chaque calcul guidé, la séquence PRIMM, le Parsons ;
-   - vérifier la console : aucune erreur.
+   - vérifier la console dans un **onglet neuf** : aucune erreur (les erreurs du rechargement à
+     chaud persistent dans un onglet ouvert et trompent).
 3. Relire tous les textes une fois, à voix basse : ton, une idée par étape, termes définis.
 
 ## 8. Livrer
 
-Commit du dossier du cours, puis un compte rendu court : la question centrale, le plan des
-modules, le modèle et ses fenêtres réglées, les statistiques de `coursekit stats`, la commande
-pour lancer le cours, et ce qui reste incertain (approximations du modèle, notions laissées de
-côté).
+Commit du dossier du cours, puis un compte rendu court : la question centrale, les idées-clés,
+le plan des modules, le modèle et ses fenêtres réglées (avec le nombre de graines), ce que la
+validation a comparé et corrigé, les statistiques de `coursekit stats`, la commande pour lancer
+le cours, et ce qui reste incertain (approximations du modèle, effets non reproduits, sources
+faibles, notions laissées de côté).
 
 ## Liste de contrôle finale
 
+- [ ] 4 à 6 idées-clés, chacune reprise dans au moins deux modules ; un budget par module.
+- [ ] Chaque méthode reproduite suit sa source primaire ; chaque chiffre de `FACTS` a sa source.
 - [ ] Le modèle a des `checks`, dont l’issue nominale et chaque fenêtre utilisée.
+- [ ] Fenêtres aléatoires vérifiées sur au moins 4 graines ; matchs avec intervalle de confiance.
+- [ ] `validation/` : README, script, résultats, et une `check` qui compare.
+- [ ] Au moins un diagnostic différentiel ; chaque question « avant » liée à une idée fausse et
+      à une idée-clé.
 - [ ] Chaque objectif de module est évalué.
 - [ ] Chaque question « après » a sa jumelle « avant ».
 - [ ] Chaque expérience a une prédiction et une conclusion.
 - [ ] Chaque module a une explication écrite.
 - [ ] Les cas cliniques ont un seul réglage fautif et un symptôme qui lui est propre.
-- [ ] Aucun chiffre écrit à la main dans les textes.
+- [ ] Aucun résultat écrit à la main dans les textes ; aucun calcul lourd dans les gabarits.
 - [ ] `coursekit tune` : toutes les fenêtres attendues vérifiées.
 - [ ] `coursekit check` : prêt, 0 remarque.
-- [ ] Grille `?shots` relue ; scène dans `safe` ; console sans erreur.
+- [ ] Chargement sous 2 s ; grille `?shots` relue ; scène dans `safe` sur écran étroit ;
+      console sans erreur dans un onglet neuf.
