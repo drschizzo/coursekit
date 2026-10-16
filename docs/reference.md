@@ -21,11 +21,13 @@ Sans DOM : un cours peut être compilé, parcouru et vérifié partout.
 | `defineCourse(def: CourseDef): CourseDef` | Identité typée : `export default defineCourse({ … })`. |
 | `CourseDef` | `id`, `version`, `language`, `title`, `lead`, `audience`, `modules`, `glossary?`, `toolbox?`, `tests?`, `layers?`, `diagrams?`, `stageKeys?`, `scenes?`, `defaults?`, `model?`, `exercises?`, `rubric?`, `labels?`, `bannedPhrases?`, `content(c: Builder)`. |
 | `Builder` | Les appels de `content(c)` : `module`, `chapter`, `step`, `diagram`, `stage`, `set`, `ask`, `question`, `numeric`, `order`, `experiment`, `explain`, `exercise`, `test`, `clinicCase`. Voir [ecrire-un-cours.md](ecrire-un-cours.md#7-le-contenu). |
+| `Text` | `string \| (() => string)` : le texte d’une étape (`c.step`) ou l’`observe` d’un cas clinique ; une fonction est appelée à la première lecture, puis son texte est gardé. |
+| `LAZY_DWELL` | 12 : les secondes d’animation d’une étape paresseuse sans `dwell`. |
 | `ModuleDef` | `{ id, title, pitch, goals, summary, kind?: 'core' \| 'exam' \| 'bonus' }`. |
 | `StepOptions` | `{ note?, code?, hud?, layers?, tools?, dwell?, claims? }`. |
 | `Claim` | `{ text, check(): boolean \| string }`. |
 | `ExperimentSpec`, `Control`, `Goal`, `Predict` | Les expériences et leurs contrôles. |
-| `ClinicCase` | `{ id, title, scene, fault, observe, choices, explain, controls, goal, conclusion, justify, exam?, diagram? }`. |
+| `ClinicCase` | `{ id, title, scene, fault, observe: Text, choices, explain, controls, goal, conclusion, justify, exam?, diagram?, symptom?(v) }`. `symptom` : ce que l’élève observe, réduit à une valeur ; le vérificateur exige qu’aucun autre contrôle du cas ne donne le même. |
 | `Term`, `Capsule`, `CapsuleStep`, `Tests`, `TestItem`, `QuizSpec` | Glossaire, fiches, tests, questions. |
 | `DomainModel`, `ModelCheck`, `ParamSpec` | Le modèle : `{ name, params?, checks: { name, run(): string \| null }[], … }`. |
 | `Stage`, `Rect` | L’interface d’une scène : `mount`, `show`, `update`, `layout?(safe)`, `status`, `resetView?`, `dispose`. |
@@ -50,6 +52,13 @@ Sans DOM : un cours peut être compilé, parcouru et vérifié partout.
 | `pct(x)` | `0.25` → `25 %`. |
 | `memo(fn, { key?, max? })` | Une version de `fn` qui garde ses derniers résultats (64 par défaut) ; `.clear()`. Pour une simulation partagée par la scène et les schémas. |
 
+### Hasard et statistiques
+
+| Export | Description |
+|---|---|
+| `rng(seed): () => number` | Un générateur pseudo-aléatoire à graine (mulberry32), uniforme dans [0, 1) : la même graine donne la même suite. Le modèle tire avec lui pour que chaque exécution soit reproductible. |
+| `wilson(k, n, z = 1.96): [number, number]` | L’intervalle de Wilson (95 % par défaut) d’une proportion k / n : ce que peut valoir le vrai taux, vu la chance de n essais. Reste dans [0, 1], même pour k = 0 ou k = n. |
+
 ### Compilation et frise
 
 | Export | Description |
@@ -58,6 +67,8 @@ Sans DOM : un cours peut être compilé, parcouru et vérifié partout.
 | `Timeline` | `caps` (étapes), `chapters`, `stops` (pauses), `diags`, `scenes`, `modules`, `duration` ; `eval(t)`, `stageVals(t)`, `diagAt(t)`, `chapterAt(t)`… |
 | `diagramVariants(tl)` | Chaque schéma avec les valeurs du fil du cours et les contrôles de ses expériences à leurs bornes. |
 | `controlBounds(control)` | Les valeurs extrêmes d’un contrôle. |
+| `Stop.clinic` | Sur l’expérience d’un cas clinique : `{ id, fault, symptom? }`, lu par le vérificateur. |
+| `Caption.lazy` | L’étape a un texte paresseux ; `text` est écrit à sa première lecture. |
 | `dwellOf(texte)` | La durée d’animation par défaut d’une étape. |
 
 ### Progression, glossaire, libellés
@@ -66,6 +77,8 @@ Sans DOM : un cours peut être compilé, parcouru et vérifié partout.
 |---|---|
 | `Progress`, `browserStore()`, `ProgressStore` | La progression enregistrée (réponses, révisions espacées de Leitner, expériences, explications, exercices, tests), dans `localStorage` sous `coursekit:<id>:v<version>`. Un `ProgressStore` sur mesure permet un autre stockage. |
 | `moduleStats`, `EFFORT`, `fmtMinutes` | Les durées estimées affichées par la page d’accueil. |
+| `courseMinutes(tl, exercices)` | La durée estimée du cours entier, hors modules bonus, en minutes. |
+| `effortMinutes(texte): [min, max] \| null` | Les minutes que dit une durée annoncée (« trois à quatre heures » → [180, 240]) ; `null` sans durée. |
 | `createGlossary(terms)` | Recherche des termes dans un texte (`find`) et mise en infobulles (`rich`). |
 | `labelsFor(remplacements)`, `FR` | Les textes de l’interface et leurs remplacements par `labels`. |
 
@@ -105,7 +118,7 @@ Importer le thème une fois : `import '@coursekit/ui/theme.css'`.
 | `mountCourse(host, course, options?): CourseHandle` | Le lecteur complet : page d’accueil, visite, pauses, atelier, tests, glossaire, fiches, révisions. |
 | `MountOptions` | `{ stage?, store?, autostart?, dev? }` ; `dev` active `/?shots`. |
 | `CourseHandle` | `next`, `prev`, `chapter`, `goto`, `pauses`, `render`, `shots`, `list`, `tl`, `prog`, `destroy`. Voir [outils.md](outils.md#dans-le-navigateur). |
-| `noStage()`, `imageStage(images, libellés?)`, `canvasStage(scènes)` | Les scènes fournies. |
+| `noStage()`, `imageStage(images, libellés?)`, `canvasStage(scènes)` | Les scènes fournies. `canvasStage` garde ses scènes lisibles (`stage.scenes`) : `coursekit check` les dessine. |
 | `CanvasScene` | `{ label?, prepare?(réglages), draw(ctx, w, h, t, réglages, données, safe) }`. |
 | `renderQuiz`, `highlight`, `h`, `esc` | Briques réutilisables pour composer une interface. |
 
@@ -113,7 +126,10 @@ Importer le thème une fois : `import '@coursekit/ui/theme.css'`.
 
 | Export | Description |
 |---|---|
-| `checkCourse(course): Report` | Les vérifications de `coursekit check` ; `Report = { course, findings, stats, ok }`. |
-| `defineTune(spec)`, `runTune(spec)` | Les fichiers de réglage de `coursekit tune`. |
-| `mockContext()` | Un contexte de canevas qui ne dessine rien et enregistre les textes tracés. |
+| `checkCourse(course, { stage? }): Report` | Les vérifications de `coursekit check` ; `Report = { course, findings, stats, ok }`. Avec `stage` (un `canvasStage`), les scènes sont dessinées dans les fenêtres de `SAFE_ZONES`. |
+| `SAFE_ZONES` | Les deux fenêtres (large, étroite) et leur zone utile où sont dessinées les scènes. |
+| `defineTune(spec)`, `runTune(spec)` | Les fichiers de réglage de `coursekit tune` : `{ title?, grid, seeds?, run(p, seed), show?, summary?, expect? }`. |
+| `TuneExpect` | `{ label, test(rows) }` (sur les lignes : `p`, `r`, `runs`) ou `{ label, where?(p), ok(r, p), atLeast?, atMost? }` (par graine : chaque graine par défaut). Voir [outils.md](outils.md#le-hasard--seeds). |
+| `summarize(textes)` | Le résumé des graines d’une case : la valeur commune, les effectifs, ou la médiane et l’étendue. |
+| `mockContext(w?, h?)` | Un contexte de canevas (380 × 236 par défaut) qui ne dessine rien et enregistre les textes tracés. |
 | bin `coursekit` | `check`, `stats`, `tune`, `new`. |

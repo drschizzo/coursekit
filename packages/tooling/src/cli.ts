@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // coursekit — the command line.
 //   coursekit check <course.ts>   the four levels of checks, a readable report
+//                                 (with the scenes of stage.ts, next to it)
 //   coursekit stats <course.ts>   chapters, steps, questions, estimated time
 //   coursekit tune <tune.ts>      sweep the model's parameters, check its windows
 //   coursekit new <dir> [title]   a new course project, ready to run
 
+import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { scaffold } from './scaffold.ts';
 
 const [cmd, arg, ...rest] = process.argv.slice(2);
@@ -16,12 +18,23 @@ async function load(file: string) {
   return mod.default;
 }
 
+/** The stage next to the course file (`stage.ts`, exporting `stage()` or a default), for the checker. */
+async function loadStage(courseFile: string): Promise<{ stage?: any; stageError?: string }> {
+  const file = join(dirname(resolve(courseFile)), 'stage.ts');
+  if (!existsSync(file)) return {};
+  try {
+    const mod = await import(pathToFileURL(file).href);
+    const s = mod.stage ?? mod.default;
+    return { stage: typeof s === 'function' ? s() : s };
+  } catch (e: any) { return { stageError: String(e?.message ?? e) }; }
+}
+
 async function main(): Promise<number> {
   // the checker and the tuner load the other packages: imported on demand, so
   // that `coursekit new` also works before the first `npm install`
   if (cmd === 'check' && arg) {
     const { checkCourse } = await import('./check.ts');
-    const r = checkCourse(await load(arg));
+    const r = checkCourse(await load(arg), await loadStage(arg));
     const errors = r.findings.filter((f) => f.level === 'error');
     const warnings = r.findings.filter((f) => f.level === 'warning');
     console.log(`Cours « ${r.course} »`);

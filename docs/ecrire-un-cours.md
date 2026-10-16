@@ -47,9 +47,13 @@ npm run dev -w courses/mon-cours
 | `src/model.ts` | Le modèle exécutable : fonctions pures, sans DOM. |
 | `src/tune.ts` | Le réglage du modèle : un balayage de ses paramètres. |
 | `src/diagrams.ts` | Les schémas (à créer). |
-| `src/stage.ts` | La scène d’arrière-plan (à créer, facultative). |
+| `src/stage.ts` | La scène d’arrière-plan : une scène d’exemple dessinée dans la zone utile. |
 | `src/course.ts` | La déclaration du cours et son contenu. |
-| `src/main.ts` | Le point d’entrée : `mountCourse`. |
+| `src/main.ts` | Le point d’entrée : `mountCourse`, avec la scène de `stage.ts`. |
+
+`package.json` lance le serveur de développement sur un port fixe (`vite --port N
+--strictPort`), le premier à partir de 5181 qu’aucun cours voisin n’utilise : deux cours
+peuvent tourner en même temps, et l’adresse d’un cours ne change pas.
 
 Le code TypeScript est exécuté tel quel par Node et par Vite : seules les syntaxes « effaçables »
 sont permises (pas d’`enum`, pas de `namespace`, pas de propriétés de paramètres de
@@ -111,7 +115,31 @@ npm run tune -w courses/mon-cours
 
 Un paramètre donne une liste, deux paramètres un tableau ; un fichier peut exporter une liste de
 réglages. Les fenêtres de `expect` sont celles que le contenu utilise : la commande échoue si
-l’une n’est plus vérifiée, par exemple après une modification du modèle.
+l’une n’est plus vérifiée, par exemple après une modification du modèle. `{ label, where, ok }`
+s’écrit aussi plus court que `test` : « sur les lignes que garde `where`, `ok` est vrai ».
+
+**Un modèle qui tire au hasard** se règle sur plusieurs graines, jamais sur une seule : une
+fenêtre trouvée sur une exécution chanceuse ne tient pas devant l’élève qui relance. Le modèle
+tire avec `rng(seed)` (`@coursekit/core`) ; le fichier de réglage donne `seeds`, et `run(p, seed)`
+tourne pour chaque graine. Les fenêtres s’écrivent alors par graine : « chaque graine », « au
+moins 4 sur 5 », « au plus 2 sur 5 » ; chaque case du tableau résume les graines.
+
+```ts
+export default defineTune({
+  title: 'Cible de SGS',
+  grid: { target: [0.1, 0.3, 0.5, 0.7, 0.95] },
+  seeds: [1, 2, 3, 4],
+  run: (p, seed) => robotOf({ ...p, seed }),
+  show: (r) => r.outcome,
+  expect: [
+    { label: 'maîtrisé de 0,1 à 0,5, chaque graine', where: (p) => p.target <= 0.5, ok: (r) => r.outcome === 'mastered' },
+    { label: 'à 0,95 : au moins 3 graines sur 4 échouent la tâche (cas clinique)', where: (p) => p.target === 0.95, ok: (r) => r.outcome === 'easy', atLeast: 3 },
+  ],
+});
+```
+
+Le texte du cours cite alors un taux et son incertitude : `wilson(k, n)` donne l’intervalle de
+Wilson à 95 % d’une proportion k / n. Détails : [outils.md](outils.md#le-hasard--seeds).
 
 ## 4. Les schémas
 
@@ -166,6 +194,11 @@ jamais par rapport à `w` et `h`.
 Une scène plus lourde (une scène 3D, une application existante) implémente directement
 l’interface `Stage` de `@coursekit/core`.
 
+`coursekit check` dessine chaque scène d’un `canvasStage` sans navigateur, avec les réglages de
+chaque endroit où le cours la montre et les contrôles des expériences à leurs bornes, dans une
+fenêtre large et une fenêtre étroite : une erreur, un « NaN » ou un texte hors de `safe` y sont
+signalés. Il faut pour cela que `src/stage.ts` exporte `stage()`, comme ci-dessus.
+
 ## 6. La déclaration du cours
 
 ```ts
@@ -192,6 +225,8 @@ export default Object.assign(defineCourse({
   par une question, une expérience ou un exercice ; `summary` est la fiche de synthèse.
 - **`version`** : à augmenter quand le contenu change au point de rendre caduque la progression
   enregistrée (elle est rangée sous la clé `coursekit:<id>:v<version>`).
+- **`audience.effort`** (« trois à quatre heures ») s’affiche à côté du temps estimé ; le
+  vérificateur fait une remarque s’ils s’écartent de plus de 15 %.
 - **`labels`** remplace des textes de l’interface ; **`bannedPhrases`** ajoute des tournures
   interdites à celles du vérificateur.
 - Les valeurs (`defaults`, `c.set`, `c.stage`, curseurs) sont des nombres. Les clés de
@@ -207,7 +242,7 @@ précèdent les questions posées avant l’explication.
 |---|---|
 | `c.module(id)` | Commence un module (entre deux chapitres). |
 | `c.chapter(titre, () => { … })` | Un chapitre ; son corps appelle les fonctions suivantes. |
-| `c.step(titre, texte, options?)` | Une étape : une idée, 75 mots au plus. |
+| `c.step(titre, texte, options?)` | Une étape : une idée, 75 mots au plus. `texte` peut être une fonction (voir ci-dessous). |
 | `c.diagram(nom \| null, { arg?, big? })` | Le schéma à partir de l’étape suivante (remis à zéro à chaque chapitre). |
 | `c.stage(scène, réglages?)` | La scène à partir de l’étape suivante ; ses réglages finissent avec elle. |
 | `c.set(valeurs)` | Des valeurs qui valent jusqu’à la fin du cours. |
@@ -233,6 +268,21 @@ c.step('Deux étages contre un', `Le premier étage donne ${fr(DV[0] / 1000, 1)}
 ```
 
 `check()` renvoie `true`, ou `false` / un message disant ce que le modèle trouve à la place.
+
+**Les textes paresseux.** Un gabarit comme celui-ci est calculé au chargement du cours : si le
+modèle met du temps (un entraînement, des centaines de parties), la page attend avant de
+s’afficher. Écrire le texte comme une fonction le calcule à la première lecture de l’étape, puis
+le garde :
+
+```ts
+c.step('Les positions jamais vues', () => `Sur les autres, la politique choisit un coup optimal ${pct(trainOf({}).netUnseen)} du temps.`);
+```
+
+Les `observe` des cas cliniques acceptent aussi une fonction. Le vérificateur écrit tous ces
+textes et les vérifie comme les autres. Sans `dwell`, une étape paresseuse anime 12 s
+(`LAZY_DWELL`) : sa longueur n’est pas connue à la compilation. Les valeurs calculées au niveau du
+module (`const RUN = trainOf({})`) coûtent aussi au chargement : les envelopper dans une fonction
+mémoïsée (`memo`) quand seuls des textes paresseux, des `claims` ou des objectifs les lisent.
 
 ### Les expériences
 
@@ -278,7 +328,22 @@ c.clinicCase({
 
 Le cas devient un chapitre : observer, diagnostiquer (la question), corriger (l’expérience),
 justifier (l’explication écrite). Un seul réglage est en défaut, et son symptôme ne doit pas se
-confondre avec celui d’un autre réglage : c’est ce que vérifie le fichier de réglage.
+confondre avec celui d’un autre réglage.
+
+`coursekit check` le vérifie (règle `clinic`) : avec le réglage fautif, l’objectif est faux ; en
+rétablissant **seulement** ce réglage à sa valeur d’avant le cas (`defaults`, `c.set`), il devient
+vrai. Attention aux `c.set` d’un chapitre précédent : ils valent jusqu’à la fin du cours, donc
+aussi pendant le cas. Pour vérifier aussi le diagnostic, donner `symptom(v)` : ce que l’élève
+observe, réduit à une valeur (un mot, une issue, un nombre arrondi).
+
+```ts
+  symptom: (v) => flightOf(v).outcome,   // 'crash' avec le défaut
+```
+
+Le symptôme du défaut doit différer de celui qu’on obtient en déplaçant, depuis les valeurs
+saines, chacun des autres contrôles du cas à ses bornes : sinon, deux causes donnent le même
+tableau, et la question de diagnostic n’a pas de réponse. Le fichier de réglage vérifie le reste
+(que le défaut est franc, sur chaque graine).
 
 ## 8. L’atelier
 

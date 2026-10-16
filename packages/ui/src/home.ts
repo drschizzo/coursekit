@@ -3,7 +3,7 @@
 // modules with its summary sheet, and the glossary overlay. Taken from avbd's
 // course/home.ts; titles and texts now come from the course.
 
-import { fmtMinutes, moduleStats, type CourseDef, type Glossary, type LabelSet, type Progress, type Stop, type Timeline } from '@coursekit/core';
+import { courseMinutes, fmtMinutes, moduleStats, type CourseDef, type Glossary, type LabelSet, type Progress, type Stop, type Timeline } from '@coursekit/core';
 import { h, esc } from './dom.ts';
 import { renderQuiz } from './quiz.ts';
 
@@ -48,7 +48,7 @@ export class Home {
     this.root.replaceChildren();
     const inner = h('div', 'home-inner');
     const stats = tl.modules.map((_, i) => moduleStats(tl, prog, i, this.exercises));
-    const total = stats.reduce((s, st, i) => s + (tl.modules[i].kind === 'bonus' ? 0 : st.minutes), 0);
+    const total = courseMinutes(tl, this.exercises);
     const cores = tl.modules.filter((m) => m.kind === 'core').length;
     const hasExam = tl.modules.some((m) => m.kind === 'exam' && m.chapters.length);
 

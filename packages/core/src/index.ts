@@ -11,3 +11,4 @@ export * from './questions.ts';
 export * from './format.ts';
 export * from './memo.ts';
 export * from './variants.ts';
+export * from './random.ts';

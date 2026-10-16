@@ -14,19 +14,11 @@
 // Diagrams, the stage, experiments, exercises and the figures of the text all
 // run this file. The published results are in FACTS, quoted, never derived.
 
-import { memo, type DomainModel } from '@coursekit/core';
+import { memo, rng, wilson, type DomainModel } from '@coursekit/core';
 import { OPENSPIEL } from './openspiel.ts';
 
-/** A seeded random generator (mulberry32): every run of the course is reproducible. */
-export function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// the seeded generator and the Wilson interval come from @coursekit/core
+export { rng, wilson };
 
 // ------------------------------------------------------------ the facts
 
@@ -250,13 +242,6 @@ export function match(p: Player, opp: Player, games: number, seed: number): Matc
   return m;
 }
 
-/** Wilson 95 % interval of a proportion k / n: what the true rate can be, given the luck of n games. */
-export function wilson(k: number, n: number, z = 1.96): [number, number] {
-  if (n === 0) return [0, 1];
-  const p = k / n, d = 1 + (z * z) / n;
-  const c = (p + (z * z) / (2 * n)) / d, h = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / d;
-  return [Math.max(0, c - h), Math.min(1, c + h)];
-}
 /** Games played against the perfect player to rate a search (half as X, half as O). */
 export const MATCH_GAMES = 100;
 

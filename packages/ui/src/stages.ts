@@ -40,9 +40,11 @@ export interface CanvasScene {
 
 /**
  * A full-window 2D canvas animated every frame — typically a simulation run
- * by the course's domain model. Scenes are registered by key.
+ * by the course's domain model. Scenes are registered by key; they stay
+ * readable on the stage (`scenes`), so that `coursekit check` can draw each
+ * one without a browser.
  */
-export function canvasStage(scenes: Record<string, CanvasScene>): Stage {
+export function canvasStage(scenes: Record<string, CanvasScene>): Stage & { scenes: Record<string, CanvasScene> } {
   let cv: HTMLCanvasElement | null = null;
   let ctx: CanvasRenderingContext2D | null = null;
   let scene: CanvasScene | null = null;
@@ -70,6 +72,7 @@ export function canvasStage(scenes: Record<string, CanvasScene>): Stage {
     scene.draw(ctx, w, hgt, (performance.now() - t0) / 1000, settings, data, safe ?? { x: 0, y: 0, w, h: hgt });
   };
   return {
+    scenes,
     mount(host) {
       cv = document.createElement('canvas');
       cv.className = 'ck-stage-canvas';

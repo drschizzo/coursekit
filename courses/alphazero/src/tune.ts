@@ -2,21 +2,18 @@
 // experiments and the clinic cases rely on; they must hold for every seed
 // listed, not for one lucky run. Change the model, run this again.
 
+import { memo } from '@coursekit/core';
 import { defineTune } from '@coursekit/tooling';
 import {
   TRAIN_SEEDS, checkpointAt, gdOf, gradVariance, mctsOf, robotSeeds, train, valueBest, type MctsRun, type RobotSeeds, type TrainRun,
 } from './model.ts';
 
-const all = <P, R>(rows: { p: P; r: R }[], keep: (p: P) => boolean, ok: (r: R) => boolean) => rows.filter((x) => keep(x.p)).every((x) => ok(x.r));
 const mcts = (r: MctsRun) => `${r.outcome} (${r.vsPerfect.losses}/${r.vsPerfect.games}, IC ${(r.ci[0] * 100).toFixed(0)}–${(r.ci[1] * 100).toFixed(0)} %)`;
 const seeds = (r: RobotSeeds) => `${r.outcome} ${JSON.stringify(r.counts)} · ${r.runs.map((x) => `${(x.final.P[4] * 100).toFixed(0)}%${x.masteredAt >= 0 ? `@${x.masteredAt}` : ''}`).join(' ')}`;
-const trainRuns = new Map<string, TrainRun[]>();
-const trainAll = (noise: number, temp: number) => {
-  const k = `${noise}|${temp}`;
-  if (!trainRuns.has(k)) trainRuns.set(k, TRAIN_SEEDS.map((seed) => train({ noise, temp, seed })));
-  return trainRuns.get(k)!;
-};
-const good = (rs: TrainRun[]) => rs.filter((r) => r.outcome === 'unbeatable').length;
+/** one self-play run, shared by the two tables */
+const trainOne = memo((noise: number, temp: number, seed: number) => train({ noise, temp, seed }));
+const unbeatable = (r: TrainRun) => r.outcome === 'unbeatable';
+const last = (r: TrainRun) => r.checkpoints[r.checkpoints.length - 1];
 
 export default [
   defineTune({
@@ -25,9 +22,9 @@ export default [
     run: (p) => mctsOf({ sims: p.sims, c: 5 }),
     show: mcts,
     expect: [
-      { label: 'perd souvent jusqu’à 50 simulations', test: (rows) => all(rows, (p) => p.sims <= 50, (r) => r.outcome === 'weak') },
-      { label: 'perd au plus 1 partie sur 100 à 1 600 et 3 200 simulations', test: (rows) => all(rows, (p) => p.sims >= 1600, (r) => r.outcome === 'solid') },
-      { label: 'entre les deux, ni l’un ni l’autre de façon sûre (400 et 800)', test: (rows) => all(rows, (p) => p.sims === 400 || p.sims === 800, (r) => r.outcome === 'fragile') },
+      { label: 'perd souvent jusqu’à 50 simulations', where: (p) => p.sims <= 50, ok: (r) => r.outcome === 'weak' },
+      { label: 'perd au plus 1 partie sur 100 à 1 600 et 3 200 simulations', where: (p) => p.sims >= 1600, ok: (r) => r.outcome === 'solid' },
+      { label: 'entre les deux, ni l’un ni l’autre de façon sûre (400 et 800)', where: (p) => p.sims === 400 || p.sims === 800, ok: (r) => r.outcome === 'fragile' },
     ],
   }),
   defineTune({
@@ -37,32 +34,34 @@ export default [
     show: mcts,
     expect: [
       { label: 'c = 0 : perd souvent', test: (rows) => rows.find((x) => x.p.c === 0)?.r.outcome === 'weak' },
-      { label: 'c de 3 à 10 : au plus 1 partie sur 100 (confirmé par OpenSpiel, règle AlphaZero)', test: (rows) => all(rows, (p) => p.c >= 3 && p.c <= 10, (r) => r.outcome === 'solid') },
-      { label: 'c = 0,1 et c = 100 : perd encore', test: (rows) => all(rows, (p) => p.c === 0.1 || p.c === 100, (r) => r.outcome !== 'solid') },
+      { label: 'c de 3 à 10 : au plus 1 partie sur 100 (confirmé par OpenSpiel, règle AlphaZero)', where: (p) => p.c >= 3 && p.c <= 10, ok: (r) => r.outcome === 'solid' },
+      { label: 'c = 0,1 et c = 100 : perd encore', where: (p) => p.c === 0.1 || p.c === 100, ok: (r) => r.outcome !== 'solid' },
     ],
   }),
   defineTune({
-    title: `Auto-jeu avec réseau (600 parties, ${TRAIN_SEEDS.length} graines) : bruit à la racine × coups tirés`,
+    title: 'Auto-jeu avec réseau (600 parties) : bruit à la racine × coups tirés',
     grid: { noise: [0, 0.5], temp: [0, 2, 9] },
-    run: (p) => trainAll(p.noise, p.temp),
-    show: (rs) => `${good(rs)}/${rs.length} sous 5 % · recherche ${rs.map((r) => r.checkpoints[r.checkpoints.length - 1].searchLoss.toFixed(2)).join(' ')} · parties distinctes ${rs.map((r) => r.distinct).join(' ')}`,
+    seeds: TRAIN_SEEDS,
+    run: (p, seed) => trainOne(p.noise, p.temp, seed),
+    summary: (rs) => `${rs.filter(unbeatable).length}/${rs.length} sous 5 % · recherche ${rs.map((r) => last(r).searchLoss.toFixed(2)).join(' ')} · parties distinctes ${rs.map((r) => r.distinct).join(' ')}`,
     expect: [
-      { label: 'nominal (bruit 0,5, 9 coups tirés) : au moins 4 graines sur 5 sous 5 % de défaites', test: (rows) => good(rows.find((x) => x.p.noise === 0.5 && x.p.temp === 9)!.r) >= 4 },
-      { label: 'sans tirage des coups : aucune graine sous 5 % (cas clinique)', test: (rows) => all(rows, (p) => p.temp === 0, (rs) => good(rs) === 0) },
-      { label: 'sans tirage des coups : au plus 55 % des parties distinctes du nominal, chaque graine', test: (rows) => { const nom = rows.find((x) => x.p.noise === 0.5 && x.p.temp === 9)!.r; const z = rows.find((x) => x.p.noise === 0.5 && x.p.temp === 0)!.r; return z.every((r, i) => r.distinct < nom[i].distinct * 0.55); } },
-      { label: 'sans bruit à la racine : au plus 2 graines sur 5', test: (rows) => good(rows.find((x) => x.p.noise === 0 && x.p.temp === 9)!.r) <= 2 },
+      { label: 'nominal (bruit 0,5, 9 coups tirés) : au moins 4 graines sur 5 sous 5 % de défaites', where: (p) => p.noise === 0.5 && p.temp === 9, ok: unbeatable, atLeast: 4 },
+      { label: 'sans tirage des coups : aucune graine sous 5 % (cas clinique)', where: (p) => p.temp === 0, ok: unbeatable, atMost: 0 },
+      { label: 'sans tirage des coups : au plus 55 % des parties distinctes du nominal, chaque graine', test: (rows) => { const nom = rows.find((x) => x.p.noise === 0.5 && x.p.temp === 9)!.runs; const z = rows.find((x) => x.p.noise === 0.5 && x.p.temp === 0)!.runs; return z.every((r, i) => r.distinct < nom[i].distinct * 0.55); } },
+      { label: 'sans bruit à la racine : au plus 2 graines sur 5', where: (p) => p.noise === 0 && p.temp === 9, ok: unbeatable, atMost: 2 },
     ],
   }),
   defineTune({
-    title: 'Auto-jeu nominal : politique seule et politique + recherche, sur 5 graines',
+    title: 'Auto-jeu nominal : politique seule et politique + recherche, graine par graine',
     grid: { seed: TRAIN_SEEDS },
-    run: (p) => trainAll(0.5, 9)[p.seed - 1],
-    show: (r) => { const c = r.checkpoints[r.checkpoints.length - 1]; return `bons coups : politique ${(c.netAcc * 100).toFixed(0)} %, recherche ${(c.searchAcc * 100).toFixed(0)} % · jamais vues ${(c.netUnseen * 100).toFixed(0)} % (hasard ${(r.unseenBase * 100).toFixed(0)} %) · défaites ${c.netLoss.toFixed(2)} / ${c.searchLoss.toFixed(2)}`; },
+    run: (p) => trainOne(0.5, 9, p.seed),
+    show: (r) => { const c = last(r); return `bons coups : politique ${(c.netAcc * 100).toFixed(0)} %, recherche ${(c.searchAcc * 100).toFixed(0)} % · jamais vues ${(c.netUnseen * 100).toFixed(0)} % (hasard ${(r.unseenBase * 100).toFixed(0)} %) · défaites ${c.netLoss.toFixed(2)} / ${c.searchLoss.toFixed(2)}`; },
+    // one row per seed: a window without `atLeast` holds on every row
     expect: [
-      { label: 'la recherche choisit plus souvent un bon coup que la politique seule (chaque graine)', test: (rows) => rows.every((x) => { const c = x.r.checkpoints[x.r.checkpoints.length - 1]; return c.searchAcc > c.netAcc + 0.15; }) },
-      { label: 'sur les positions jamais vues, la politique fait mieux que le hasard (chaque graine)', test: (rows) => rows.every((x) => x.r.checkpoints[x.r.checkpoints.length - 1].netUnseen > x.r.unseenBase + 0.04) },
-      { label: 'à la fin, la recherche perd moins qu’au départ (chaque graine)', test: (rows) => rows.every((x) => checkpointAt(x.r, 1e9).searchLoss < x.r.checkpoints[0].searchLoss) },
-      { label: 'la politique seule perd encore plus de 30 % des parties (chaque graine)', test: (rows) => rows.every((x) => checkpointAt(x.r, 1e9).netLoss > 0.3) },
+      { label: 'la recherche choisit plus souvent un bon coup que la politique seule (chaque graine)', ok: (r) => last(r).searchAcc > last(r).netAcc + 0.15 },
+      { label: 'sur les positions jamais vues, la politique fait mieux que le hasard (chaque graine)', ok: (r) => last(r).netUnseen > r.unseenBase + 0.04 },
+      { label: 'à la fin, la recherche perd moins qu’au départ (chaque graine)', ok: (r) => checkpointAt(r, 1e9).searchLoss < r.checkpoints[0].searchLoss },
+      { label: 'la politique seule perd encore plus de 30 % des parties (chaque graine)', ok: (r) => checkpointAt(r, 1e9).netLoss > 0.3 },
     ],
   }),
   defineTune({
@@ -71,9 +70,9 @@ export default [
     run: (p) => gdOf(p),
     show: (r) => { const e = r.path[r.path.length - 1]; return `${r.outcome} · erreur ${e.L.toPrecision(3)} (minimum ${valueBest().L.toFixed(3)})`; },
     expect: [
-      { label: 'trop lent jusqu’à 0,03', test: (rows) => all(rows, (p) => p.eta <= 0.03, (r) => r.outcome === 'slow') },
-      { label: 'atteint le minimum de 0,1 à 0,65', test: (rows) => all(rows, (p) => p.eta >= 0.1 && p.eta <= 0.65, (r) => r.outcome === 'converged') },
-      { label: 'diverge à partir de 0,7', test: (rows) => all(rows, (p) => p.eta >= 0.7, (r) => r.outcome === 'diverged') },
+      { label: 'trop lent jusqu’à 0,03', where: (p) => p.eta <= 0.03, ok: (r) => r.outcome === 'slow' },
+      { label: 'atteint le minimum de 0,1 à 0,65', where: (p) => p.eta >= 0.1 && p.eta <= 0.65, ok: (r) => r.outcome === 'converged' },
+      { label: 'diverge à partir de 0,7', where: (p) => p.eta >= 0.7, ok: (r) => r.outcome === 'diverged' },
     ],
   }),
   defineTune({
@@ -93,9 +92,9 @@ export default [
     run: (p) => robotSeeds(p),
     show: seeds,
     expect: [
-      { label: 'maîtrisé (chaque graine) de 0,1 à 0,5 : peu sensible aux cibles basses, comme l’écrit l’article', test: (rows) => all(rows, (p) => p.target >= 0.1 && p.target <= 0.5, (r) => r.counts.mastered === 4) },
-      { label: 'pas maîtrisé à 0,7 et plus', test: (rows) => all(rows, (p) => p.target >= 0.7, (r) => r.outcome !== 'mastered') },
-      { label: 'à 0,9 et plus : réussit l’entraînement, échoue la tâche (cas clinique à 0,95), chaque graine', test: (rows) => all(rows, (p) => p.target >= 0.9, (r) => r.counts.easy === 4) },
+      { label: 'maîtrisé (chaque graine) de 0,1 à 0,5 : peu sensible aux cibles basses, comme l’écrit l’article', where: (p) => p.target >= 0.1 && p.target <= 0.5, ok: (r) => r.counts.mastered === 4 },
+      { label: 'pas maîtrisé à 0,7 et plus', where: (p) => p.target >= 0.7, ok: (r) => r.outcome !== 'mastered' },
+      { label: 'à 0,9 et plus : réussit l’entraînement, échoue la tâche (cas clinique à 0,95), chaque graine', where: (p) => p.target >= 0.9, ok: (r) => r.counts.easy === 4 },
     ],
   }),
   defineTune({
@@ -104,9 +103,9 @@ export default [
     run: (p) => robotSeeds(p),
     show: (r) => `${r.outcome} ${JSON.stringify(r.counts)}`,
     expect: [
-      { label: 'naïve, poids 3 et plus : plafonne, chaque graine (cas d’épreuve à 4)', test: (rows) => all(rows, (p) => p.reward === 1 && p.w >= 3, (r) => r.counts.capped === 4) },
+      { label: 'naïve, poids 3 et plus : plafonne, chaque graine (cas d’épreuve à 4)', where: (p) => p.reward === 1 && p.w >= 3, ok: (r) => r.counts.capped === 4 },
       { label: 'naïve, poids 1 : maîtrisé', test: (rows) => rows.find((x) => x.p.reward === 1 && x.p.w === 1)?.r.outcome === 'mastered' },
-      { label: 'par potentiel : jamais de plafond, quel que soit le poids (Ng et al., 1999)', test: (rows) => all(rows, (p) => p.reward === 2, (r) => !r.counts.capped) },
+      { label: 'par potentiel : jamais de plafond, quel que soit le poids (Ng et al., 1999)', where: (p) => p.reward === 2, ok: (r) => !r.counts.capped },
     ],
   }),
   defineTune({
@@ -115,8 +114,8 @@ export default [
     run: (p) => robotSeeds({ ...p, sampler: 0, nseeds: 8 }),
     show: (r) => `${8 - (r.counts.mastered ?? 0)}/8 plafonnent`,
     expect: [
-      { label: 'pas 16 : aucune graine ne plafonne', test: (rows) => all(rows, (p) => p.lr === 16, (r) => r.counts.mastered === 8) },
-      { label: 'pas 256, lots de 4 : au moins 2 graines sur 8 plafonnent, avec ou sans base', test: (rows) => all(rows, (p) => p.lr === 256 && p.batch === 4, (r) => 8 - (r.counts.mastered ?? 0) >= 2) },
+      { label: 'pas 16 : aucune graine ne plafonne', where: (p) => p.lr === 16, ok: (r) => r.counts.mastered === 8 },
+      { label: 'pas 256, lots de 4 : au moins 2 graines sur 8 plafonnent, avec ou sans base', where: (p) => p.lr === 256 && p.batch === 4, ok: (r) => 8 - (r.counts.mastered ?? 0) >= 2 },
       { label: 'pas 64, lots de 4 : la base de référence évite le plafond', test: (rows) => rows.find((x) => x.p.lr === 64 && x.p.batch === 4 && x.p.baseline === 0)!.r.counts.mastered! <= 6 && rows.find((x) => x.p.lr === 64 && x.p.batch === 4 && x.p.baseline === 1)!.r.counts.mastered === 8 },
     ],
   }),
