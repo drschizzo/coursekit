@@ -299,8 +299,8 @@ const course = defineCourse({
     ],
     post: [
       { id: 'p1', pair: 'b1', skill: 'L’origine de la poussée', q: choice('Un astronaute immobile dans l’espace lance une clé vers l’avant. Que lui arrive-t-il ?', ['il part vers l’arrière', 'il reste immobile', 'il part vers l’avant', 'il se met à tourner sur place'], 'Comme une fusée : il pousse la clé, la clé le pousse en sens inverse.') },
-      { id: 'p2', pair: 'b2', skill: 'Le décollage', q: choice('Une fusée de 50 t a un rapport poussée / poids de 1,5. Quelle est son accélération au décollage ?', ['environ 4,9 m/s²', 'environ 14,7 m/s²', 'environ 1,5 m/s²', 'environ 9,8 m/s²'], 'a = poussée/m − g = 1,5 g − g = 0,5 × 9,81 ≈ 4,9 m/s².') },
-      { id: 'p3', pair: 'b3', skill: 'L’équation de la fusée', q: choice('Deux fusées ont le même rapport de masse ; la seconde a une vitesse d’éjection deux fois plus grande. Son Δv est…', ['deux fois plus grand', 'le même', 'quatre fois plus grand', 'un peu plus grand seulement'], 'Δv = ve · ln(m0/mf) est proportionnel à la vitesse d’éjection.') },
+      { id: 'p2', pair: 'b2', skill: 'Le décollage', q: choice('Un lanceur de 300 t doit quitter le sol en accélérant d’au moins 5 m/s². Quelle poussée lui faut-il, au minimum ?', ['environ 4 400 kN', 'environ 1 500 kN', 'environ 2 900 kN', 'environ 3 000 kN'], 'La poussée doit porter le poids et fournir l’accélération : F = m·(g + a) = 300 000 × (9,81 + 5) ≈ 4 440 kN. 2 900 kN ne ferait que compenser le poids.') },
+      { id: 'p3', pair: 'b3', skill: 'L’équation de la fusée', q: choice('Un ingénieur remplace un moteur qui éjecte ses gaz à 3 000 m/s par un moteur à hydrogène qui les éjecte à 4 500 m/s, sans changer les masses. Le gain de vitesse de son lanceur est multiplié par…', ['1,5', '2,25', '1, il ne change pas', '1,1 seulement'], 'Δv = ve · ln(m0/mf) : à masses égales, il est proportionnel à la vitesse d’éjection, ici multipliée par 1,5.') },
       { id: 'p4', pair: 'b4', skill: 'L’orbite', q: choice('Un satellite en orbite circulaire ralentit un peu. Que se passe-t-il ?', ['il descend vers la Terre', 'il continue sur la même orbite', 'il s’éloigne de la Terre', 'il s’arrête puis tombe à la verticale'], 'Trop lent pour son orbite, il tombe plus qu’il ne faut : sa trajectoire se rapproche de la Terre.') },
       { id: 'p5', pair: 'b5', skill: 'La trajectoire', q: choice('Une fusée bascule très fort juste après le décollage. Quel est le risque ?', ['rester trop bas, dans l’air dense', 'monter trop haut', 'dépasser la vitesse de libération', 'perdre un étage trop tôt'], 'Elle prend de la vitesse alors qu’elle est encore dans l’air dense : la traînée la freine et elle peut retomber.') },
     ],
@@ -396,7 +396,7 @@ const course = defineCourse({
         seq: true, conclusion: 'Avec un seul réservoir, il faudrait que 93 % de la fusée soit de l’ergol. Une meilleure vitesse d’éjection réduit beaucoup le rapport nécessaire.',
       });
       c.numeric('q-dv', 'Une fusée a un rapport de masse de 4 et une vitesse d’éjection de 3 000 m/s. Quel est son Δv, en m/s ?', 3000 * Math.log(4), `3 000 × ln 4 ≈ 3 000 × 1,386 ≈ ${fr(3000 * Math.log(4))} m/s.`, { unit: 'm/s', tol: 40 });
-      c.question('q-double', 'On double la masse d’ergol d’une fusée sans changer sa masse vide. Son Δv…', ['augmente, mais ne double pas', 'double exactement', 'reste le même', 'est multiplié par quatre'], 'Le rapport de masse augmente, mais le Δv suit son logarithme, qui croît lentement.');
+      c.question('q-double', `Avec un rapport de masse de 3, une fusée gagne ${fr(tsiolkovsky(3000, 3, 1) / 1000, 1)} km/s. Avec les mêmes moteurs, quel rapport de masse lui faudrait-il pour gagner deux fois plus ?`, ['9 : il faut l’élever au carré', '6 : il suffit de le doubler', '4,5 : une fois et demie plus', '27 : il faut l’élever au cube'], 'Le Δv suit le logarithme du rapport de masse : ln 9 = 2 ln 3. Doubler le Δv demande d’élever le rapport au carré, d’où des fusées faites presque entièrement d’ergol.');
     });
     c.chapter('Les étages', () => {
       c.stage('flight');
@@ -471,10 +471,11 @@ const course = defineCourse({
     });
     c.chapter('Le basculement', () => {
       c.stage('flight');
-      c.diagram('flight');
+      c.diagram(null);
       c.set({ kick: FLIGHT.kick });
       c.ask('q-tilt', 'Pourquoi une fusée ne monte-t-elle pas tout droit jusqu’à 200 km avant de tourner ?', ['elle gaspillerait son ergol à lutter contre le poids', 'elle risquerait de heurter un satellite', 'elle sortirait trop vite de l’air', 'elle ne pourrait plus larguer d’étage'], 'Pendant tout ce temps, une partie de la poussée ne ferait que compenser le poids.');
       c.step('Monter, puis accélérer à l’horizontale', 'L’orbite demande surtout de la vitesse horizontale. Mais la fusée doit d’abord sortir de l’air dense, qui la freinerait. Elle monte donc presque à la verticale, puis s’incline progressivement. Plus elle reste longtemps à la verticale, plus elle perd de Δv à lutter contre son poids : ce sont les pertes par gravité.');
+      c.diagram('flight');
       c.step('Le virage gravitationnel', `À ${fr(FLIGHT.kickSpeed)} m/s, la fusée s’incline de quelques degrés : c’est le basculement. Ensuite, les moteurs poussent dans la direction de la vitesse, et la pesanteur courbe peu à peu la trajectoire vers l’horizontale, sans effort de pilotage. Le second étage, au-dessus de l’air, est guidé : il pousse presque à l’horizontale jusqu’à la vitesse orbitale.`, { hud: flightHud });
       c.experiment({
         title: 'Réglez le basculement', prompt: 'Faites varier l’angle de basculement. Regardez la trajectoire sur le schéma et le vol en arrière-plan.',

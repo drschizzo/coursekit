@@ -47,7 +47,7 @@ function hud(ctx: CanvasRenderingContext2D, x: number, y: number, s: Sample, f: 
     `t = ${fr(s.t)} s`,
     `altitude ${fr(s.alt / 1000, 1)} km`,
     `vitesse ${fr(s.speed)} m/s`,
-    `masse ${fr(s.m / 1000, 1)} t · étage ${s.stage + 1}`,
+    `masse ${fr(s.m / 1000, 1)} t`,
   ];
   lines.forEach((l, i) => ctx.fillText(l, x, y + i * 17));
   ctx.fillStyle = f.outcome === 'orbit' ? 'rgba(94,224,160,.85)' : 'rgba(255,107,122,.85)';
@@ -152,16 +152,14 @@ export const stage = () => canvasStage({
       const [X2, Y2] = Q(s2.x, s2.y);
       const ang = Math.atan2(X2 - X, -(Y2 - Y));
       drawRocket(ctx, X, Y, 26, Number.isFinite(ang) && (X2 !== X || Y2 !== Y) ? ang : 0, s.burning && tt <= T, s.stage);
-      // events
-      ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'left';
+      // the events, as dots: their names come with the chapters that explain them
       for (const ev of f.events) {
         if (ev.t > tt || ev.kind === 'kick') continue;
         const e = at(f, ev.t);
         const [ex, ey] = Q(e.x, e.y);
         ctx.fillStyle = 'rgba(230,234,245,.85)'; ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = 'rgba(230,234,245,.5)'; ctx.fillText(ev.label, ex + 6, ey + 14);
       }
-      ctx.fillStyle = 'rgba(230,234,245,.35)'; ctx.font = '11px Inter, sans-serif';
+      ctx.fillStyle = 'rgba(230,234,245,.35)'; ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'left';
       ctx.fillText(`altitudes exagérées ${fr(ky / k)} fois · vol accéléré quinze fois`, safe.x + 12, safe.y + safe.h - 6);
       hud(ctx, safe.x + 12, safe.y + 16, s, f);
     },

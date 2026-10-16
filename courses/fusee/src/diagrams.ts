@@ -107,7 +107,7 @@ function tsiolkovskyPlot(ctx: Ctx, e: DiagramEnv): void {
   ctx.stroke(); ctx.restore();
   // orbital speed, for scale
   line(ctx, x0, Y(7800), x0 + w, Y(7800), alpha(CC.blue, 0.7), 1, [4, 4]);
-  text(ctx, 'vitesse orbitale 7,8 km/s', x0 + w, Y(7800) - 8, CC.blue, 9, 'right');
+  text(ctx, 'l’orbite à 200 km : 7,8 km/s', x0 + w, Y(7800) - 8, CC.blue, 9, 'right');
   const dv = ve * Math.log(R);
   line(ctx, X(R), Y(0), X(R), Y(dv), CC.dim, 1, [3, 3]);
   dot(ctx, X(R), Y(dv), CC.fg, 4);
@@ -135,7 +135,7 @@ function budget(ctx: Ctx, e: DiagramEnv): void {
     }
     text(ctx, `${fr(a / 1000, 1)} km/s`, X(a) + 5, y + 11, CC.dim, 9);
   };
-  bar(30, [{ v: need, col: CC.blue, label: 'vitesse orbitale' }, { v: losses, col: CC.pink, label: 'pertes' }], 'il faut');
+  bar(30, [{ v: need, col: CC.blue, label: 'orbite' }, { v: losses, col: CC.pink, label: 'pertes' }], 'il faut');
   bar(90, [{ v: two[0], col: CC.acc, label: 'étage 1' }, { v: two[1], col: CC.green, label: 'étage 2' }], 'deux étages');
   bar(150, [{ v: one[0], col: CC.violet, label: 'un seul étage' }], 'un étage');
   line(ctx, X(need + losses), 20, X(need + losses), 182, CC.fg, 1, [4, 4]);

@@ -33,7 +33,7 @@ function r0Diagram(ctx: Ctx, e: DiagramEnv): void {
   text(ctx, fr(R, 2), 328, 86, CC.fg, 17, 'center');
   text(ctx, 'R0 : personnes contaminées par un malade', 14, 140, CC.dim, 10);
   text(ctx, 'dans une ville où personne n’est immunisé', 14, 154, CC.dim, 10);
-  text(ctx, R < 1 ? 'R0 < 1 : chaque génération est plus petite, la maladie s’éteint' : 'R0 > 1 : chaque génération est plus grande, l’épidémie démarre', 14, 186, verdictColor(R), 10);
+  text(ctx, R < 1 ? 'R0 < 1 : un malade en contamine moins d’un, elle s’éteint' : 'R0 > 1 : un malade en contamine plus d’un, elle démarre', 14, 186, verdictColor(R), 10);
 }
 
 // ------------------------------------------------- 2. the generations

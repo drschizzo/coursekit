@@ -274,7 +274,7 @@ const course = defineCourse({
   id: 'permutants', version: 1, language: 'fr',
   title: 'Les mondes de La Cité des permutants',
   lead: 'Dans la seconde partie du roman de Greg Egan, Maria se réveille dans l’Élysium, un univers d’ordinateurs bâti sur un automate cellulaire. Une partie de cet univers fait tourner le Cosmoplexe, une physique jouet où une civilisation est apparue. Ce cours construit des versions miniatures de ces mondes, pour comprendre ce qu’ils sont, comment ils tiennent, et pourquoi l’explication des Lambertiens finit par l’emporter sur celle de leurs créateurs.',
-  audience: { level: 'lecteurs du roman, à partir de la fin du lycée', prerequisites: 'Avoir lu le roman aide, sans être indispensable. Les nombres binaires, les puissances et la mesure d’une description en bits sont rappelés dans des fiches. Deux exercices facultatifs demandent un peu de programmation.', effort: 'trois à quatre heures' },
+  audience: { level: 'lecteurs du roman, à partir de la fin du lycée', prerequisites: 'Avoir lu le roman aide, sans être indispensable. Les nombres binaires, les puissances et la mesure d’une description en bits sont rappelés dans des fiches. Deux exercices facultatifs demandent un peu de programmation.', effort: 'quatre à cinq heures' },
   modules: [
     {
       id: 'm1', title: 'Des univers faits de règles', pitch: 'Un automate cellulaire, ses configurations sans passé et la théorie de la poussière : les idées sur lesquelles repose toute la seconde partie.',
@@ -359,7 +359,7 @@ const course = defineCourse({
   diagrams: DIAGRAMS,
   stageKeys: ['rule', 'caSeed', 'slices', 'missing', 'accel', 'pop', 'collapse', 'absorb', 'lum', 'inject', 'defend', 'prec', 'aest', 'theory'],
   scenes: {
-    ca: 'Un automate cellulaire', dust: 'La poussière remise en ordre', elysium: 'Le cube de l’Élysium',
+    ca: 'Un automate cellulaire', dust: 'La poussière remise en ordre', dustCase: 'La vie de la Copie, remise en ordre', elysium: 'Le cube de l’Élysium',
     cosmo: 'Le bord du Cosmoplexe', gate: 'La couche limite', dance: 'Une danse lambertienne',
   },
   defaults: {
@@ -412,10 +412,11 @@ const course = defineCourse({
     });
     c.chapter('La configuration jardin d’Éden', () => {
       c.stage('ca', { rule: 30, caSeed: 1 });
-      c.diagram('garden');
+      c.diagram(null);
       c.ask('q-goe', 'Dans un automate cellulaire, chaque configuration peut-elle être obtenue à partir d’une autre, un cycle plus tôt ?', ['non, certaines n’ont pas de passé', 'oui, toujours d’une seule', 'oui, toujours de plusieurs', 'seulement sur un anneau'], 'Certaines configurations ne sont la suivante d’aucune : on ne peut pas les atteindre en faisant tourner l’automate.');
       c.step('Remonter d’un cycle', 'Une configuration est l’état de toutes les cellules à un instant. Ses antécédents sont les configurations qui y mènent en un cycle. Chaque configuration a exactement une suivante ; mais plusieurs configurations peuvent avoir la même suivante.');
       c.step('Des états sans passé', 'Si deux configurations mènent à la même, il en reste d’autres que rien ne produit : elles n’ont aucun antécédent. Ce sont les configurations jardin d’Éden. On ne peut les obtenir qu’en les installant au départ, de l’extérieur de l’automate.');
+      c.diagram('garden');
       c.step('Les compter', `Sur un anneau de 10 cellules, la règle 30 a ${fr(G30.total)} configurations possibles ; ${fr(G30.gardens)} n’ont aucun antécédent, soit ${pct(G30.share)}. Le schéma range les configurations selon leur nombre d’antécédents ; la barre rouge compte les jardins d’Éden.`, {
         tools: ['P1'],
         claims: [{ text: 'la règle 30 a des jardins d’Éden', check: () => G30.gardens > 0 }],
@@ -436,12 +437,13 @@ const course = defineCourse({
       c.step('Les règles réversibles', 'Une règle est réversible quand chaque configuration a exactement un antécédent : on peut alors remonter le temps sans ambiguïté, et aucune configuration n’est un jardin d’Éden. Dès que deux configurations se rejoignent, des jardins d’Éden apparaissent ailleurs.');
       c.step('L’argument de Durham', 'Durham veut une preuve de la théorie de la poussière. S’il se retrouve dans un univers d’automate dont le passé remonte à une configuration jardin d’Éden, cet état n’a pu être produit par les règles : il a été construit ailleurs, dans le monde qu’il se rappelle. Le TVC partira d’un tel état.');
       c.exercise('gardenCalc', 'Dans l’atelier, comptez les jardins d’Éden de la règle 30.');
-      c.question('q-goe-why', 'Pourquoi une configuration jardin d’Éden ne peut-elle apparaître qu’au tout début d’une histoire ?', ['aucune configuration ne la produit', 'elle disparaît au premier cycle', 'elle est trop rare pour revenir', 'la règle l’interdit au départ'], 'Elle n’a pas d’antécédent : aucun cycle ne peut y mener, elle ne peut être que l’état initial.');
+      c.question('q-goe-why', 'Sur un anneau de 10 cellules, la règle 30 tourne 1 000 cycles à partir d’une configuration tirée au hasard. Combien de fois, au plus, l’histoire passe-t-elle par une configuration jardin d’Éden ?', ['une fois au plus, au tout début', `environ ${pct(G30.share)} des cycles, leur part`, 'jamais, elles sont bien trop rares', 'une fois à chaque tour de boucle'], `Une configuration jardin d’Éden n’a pas d’antécédent : aucun cycle ne peut y mener. Seule la configuration de départ peut en être une ; tirée au hasard, elle l’est avec une chance de ${pct(G30.share)}.`);
     });
     c.chapter('Calculer dans le désordre : la poussière', () => {
       c.stage('dust', { slices: 24, missing: 0 });
+      c.diagram(null);
+      c.ask('q-dust', 'Une Copie est calculée par tranches : sa seconde 2 à Dallas un mardi, sa seconde 3 à Tokyo le lundi d’avant. Que vit-elle entre sa seconde 2 et sa seconde 3 ?', ['une seconde, comme d’habitude', 'un retour de huit jours en arrière', 'un trou de huit jours', 'un instant figé, sans durée'], 'Elle ne perçoit que ses états : la seconde 3 découle de la seconde 2, où et quand qu’on la calcule. L’ordre vécu est dans les états eux-mêmes.');
       c.diagram('dust');
-      c.ask('q-dust', 'On calcule les instants de la vie d’une Copie dans le désordre, sur des machines dispersées dans le monde. Que perçoit-elle ?', ['une vie ordinaire, dans l’ordre', 'des instants mélangés', 'des instants manquants', 'un monde ralenti'], 'Chaque instant est l’état qui découle du précédent : l’ordre vécu est dans les états eux-mêmes.');
       c.step('L’expérience de Paul', 'Dans la première partie, Durham découpe une Copie de lui-même en 50 sections et 20 tranches de temps, réparties au hasard sur mille ordinateurs. La Copie compte jusqu’à dix et ne remarque rien : sa pièce reste intacte, son temps continu.');
       c.step('L’ordre est dans les états', 'Sur la scène, les lignes d’une histoire d’automate sont calculées dans un ordre mélangé, à gauche. À droite, on les remet en ordre sans aucune date : la règle appliquée à une ligne désigne la suivante. Une seule ligne n’est la suivante d’aucune autre : c’est la première.');
       c.experiment({
@@ -493,10 +495,11 @@ const course = defineCourse({
     });
     c.chapter('Croître comme un cristal', () => {
       c.stage('elysium', { accel: 2, pop: 1 });
-      c.diagram('crystal');
+      c.diagram(null);
       c.ask('q-crystal', 'Un univers qui s’étend sans fin finit-il forcément par se refroidir et s’épuiser ?', ['non, s’il croît en ajoutant de l’ordre', 'oui, toute expansion dilue l’énergie', 'oui, l’entropie finit par gagner', 'non, s’il s’étire assez lentement'], 'Durham insiste : le TVC croît comme un cristal, pas comme un ballon. Chaque nouveau processeur ajoute de la mémoire et du calcul, donc de l’ordre.');
       c.step('Un cristal, pas un ballon', 'Étirer l’espace ordinaire étale la matière et augmente le désordre. Le TVC ne s’étire pas : ses processeurs se recopient sur les bords, et chaque nouvelle couche ajoute de la place pour des données et du calcul. Rien dans les règles n’empêche ces machines de durer toujours.');
       c.step('Une croissance en t³', `Si chaque face du cube gagne une couche de processeurs à chaque génération, l’arête grandit de 2 et le nombre de processeurs vaut (${fr(BOOK.edge)} + 2t)³. Il croît comme le cube du temps.`, { tools: ['P1'] });
+      c.diagram('crystal');
       c.step('Le Temps standard accélère', 'La plupart des Élysiens vivent au Temps standard, qui accélère par rapport à l’horloge de l’automate. Chacun a donc besoin de toujours plus de processeurs. « Mais l’Élysium lui-même croissait encore plus vite. » Le modèle donne au Temps standard une accélération en puissance du temps.');
       c.experiment({
         title: 'Le cristal contre l’horloge', prompt: 'Réglez l’exposant de l’accélération du Temps standard et la population.',
@@ -551,10 +554,11 @@ const course = defineCourse({
     // ================================================================ m3
     c.module('m3');
     c.chapter('Une physique jouet', () => {
-      c.stage('cosmo', { absorb: 1, lum: 1 });
-      c.diagram('atoms');
+      c.diagram(null);
       c.ask('q-sim', 'Le Cosmoplexe est-il une simulation de la physique réelle ?', ['non, il a ses propres lois, plus simples', 'oui, à l’échelle des atomes', 'oui, mais sans la gravitation', 'non, il n’a pas de lois fixes'], 'Max Lambert l’a conçu comme un univers jouet aux lois simplifiées : il ne simule pas plus notre monde que les échecs ne simulent une bataille.');
-      c.step('Les lois de Max Lambert', 'Le Cosmoplexe est un automate cellulaire dont les lois imitent une physique simplifiée. Ses atomes ressemblent aux nôtres sans l’être. Le roman le compare aux échecs : pas plus une simulation du monde réel que le jeu n’est une simulation des combats médiévaux. Sa chimie reste riche.');
+      c.stage('cosmo', { absorb: 1, lum: 1 });
+      c.step('Les lois de Max Lambert', 'Le Cosmoplexe est un automate cellulaire dont les lois imitent une physique simplifiée. Ses atomes ressemblent aux nôtres sans l’être. Le roman le compare aux échecs : pas plus une simulation du monde réel que le jeu n’est une simulation des combats médiévaux. Sa chimie reste riche : elle a son eau, l’aqua.');
+      c.diagram('atoms');
       c.step('Trente-deux atomes, en couleurs fausses', `Le Cosmoplexe compte ${fr(BOOK.atoms)} atomes. On les affiche en couleurs fausses, rouge, vert, bleu : « l’expression était tautologique », note Maria. Toute vue du Cosmoplexe est une carte codée ; une vue « à l’œil nu » n’y a aucun sens.`, {
         claims: [{ text: '32 atomes', check: () => BOOK.atoms === 32 }],
       });
@@ -602,12 +606,12 @@ const course = defineCourse({
         ],
         seq: true, conclusion: 'Sans sortie, la lumière s’accumule et la température monte sans fin. Avec l’étoile nominale, il faut laisser sortir au moins 40 % de la lumière qui atteint le bord ; frontière ouverte, une étoile deux fois moins lumineuse gèle l’aqua.',
       });
-      c.step('Ce qui entre', 'Par cette frontière, n’entrent qu’un rayonnement thermique froid et quelques atomes, comme un gaz interstellaire tiré au hasard. Ils sont créés dans une mince couche de cellules qui n’obéit pas aux lois du Cosmoplexe : sans cela, aucun atome ne pourrait y apparaître.');
+      c.step('Ce qui entre', 'Par cette frontière, n’entrent qu’un rayonnement thermique froid et quelques atomes, comme un gaz interstellaire tiré au hasard. Ils sont créés dans une mince couche de cellules, la couche limite, qui n’obéit pas aux lois du Cosmoplexe : sans cela, aucun atome ne pourrait y apparaître.');
     });
     c.chapter('Agir sans tricher', () => {
       c.stage('gate', { inject: -1, defend: 0 });
       c.diagram('gate');
-      c.ask('q-inject', 'Peut-on ajouter un atome à l’intérieur du Cosmoplexe sans en violer les lois ?', ['seulement par la couche du bord', 'oui, entre deux cycles d’horloge', 'oui, si l’atome est assez petit', 'oui, si personne ne regarde'], 'Un atome qui surgit à l’intérieur ne découle pas de l’état précédent : la règle est violée. La couche limite, elle, n’obéit à aucune loi.');
+      c.ask('q-inject', 'Les Élysiens observent la planète Lambert, cellule par cellule, depuis trois milliards d’années. L’ont-ils modifiée en la regardant ?', ['non, lire une cellule ne la change pas', 'oui, toute mesure perturbe ce qu’elle mesure', 'oui, un peu, à chaque image affichée', 'non, car ils ne voient que sa surface'], 'Le logiciel de surveillance lit l’état des cellules sans en écrire aucune : l’état suivant découle toujours de la règle seule.');
       c.step('Regarder sans toucher', 'Le logiciel de surveillance observe Lambert « au travers d’un quadrillion de fissures de l’espace ». Il lit les cellules sans en faire partie ni obéir à leurs lois. Lire ne change rien : les Élysiens ont pu tout voir pendant trois milliards d’années sans jamais rien modifier.');
       c.step('Les gants de Maria', 'Toucher, c’est autre chose. Quand Maria saisit une molécule avec ses gants, la physique du Cosmoplexe est suspendue. Construire de petites mains dans le Cosmoplexe ne ferait que « changer simplement le niveau où les règles étaient enfreintes ». Manipuler le contenu, c’est en violer les lois.');
       c.experiment({
@@ -641,9 +645,10 @@ const course = defineCourse({
     });
     c.chapter('La plus courte l’emporte', () => {
       c.stage('dance', { prec: 8, aest: 1, theory: 0 });
-      c.diagram('theories');
+      c.diagram(null);
       c.ask('q-mdl', 'Une théorie explique les observations ; une autre dit la même chose et ajoute qu’un créateur a tout installé. Laquelle est la plus courte ?', ['la première', 'la seconde', 'elles sont aussi longues', 'cela dépend du créateur'], 'La seconde contient la première, plus le créateur : elle est forcément plus longue, sans rien prédire de plus.');
       c.step('Mesurer une explication', 'On peut mesurer une théorie en bits : la longueur de ses règles, plus celle des nombres qu’elles n’expliquent pas. Entre deux théories qui reproduisent les mêmes observations, la plus courte est la plus simple. C’est une version précise du rasoir d’Occam.', { tools: ['L1'] });
+      c.diagram('theories');
       c.step('Trois explications du nuage', `La théorie classique : les règles du Cosmoplexe, puis les abondances des ${fr(BOOK.atoms)} atomes recopiées telles quelles. Les équations de champ : plus longues, mais elles prédisent les abondances. Les créateurs : la théorie classique, plus les règles TVC et ceux qui les ont lancées. Le modèle fixe ces longueurs.`);
       c.experiment({
         title: 'Mesurer plus finement', prompt: 'Réglez la précision des mesures des abondances, et la théorie que danse l’équipe sur la scène.',
@@ -673,7 +678,7 @@ const course = defineCourse({
       c.step('La hiérarchie se défait', 'Le schéma montre la hiérarchie supposée : les règles TVC font tourner l’Élysium, qui fait tourner le Cosmoplexe. Mais, dit Durham, sur Lambert « tout ce qu’il se passe est intimement lié à un ensemble unique de lois physiques ». L’Élysium, fait de RV composite, est le moins cohérent des deux.');
       c.step('Le reste du message', 'Sur Lambert, Porte-Parole danse la cosmologie des Élysiens : un automate cellulaire créé avec le nuage originel. Les Lambertiens demandent « le reste du message » : l’univers où cet automate a été créé. Durham fait danser les règles TVC. Les Lambertiens répondent par une sphère parcourue d’ondes : une fin de non-recevoir.');
       c.step('Un monde éternel est absurde', 'Leur raison : le système décrit par les règles TVC « se maintiendrait éternellement ». Les Lambertiens connaissent l’infini comme outil de calcul, mais aucun de leurs modèles n’aboutit à un résultat infini. Une théorie qui en produit un est, pour eux, une absurdité.');
-      c.question('q-reject', 'Pourquoi les Lambertiens rejettent-ils les règles TVC qu’on leur danse ?', ['elles décrivent un monde éternel', 'elles sont trop simples à leur goût', 'elles contredisent leurs mesures', 'elles viennent de robots étrangers'], 'Le système décrit par les règles TVC durerait toujours ; aucun modèle lambertien acceptable ne mène à un résultat infini.');
+      c.question('q-reject', 'Une équipe lambertienne danse une cosmologie où l’univers dure 10^100 cycles, puis s’éteint. Pour les Lambertiens, cette théorie…', ['peut tenir : rien n’y devient infini', 'est absurde : le nombre est trop grand', 'est absurde : un univers doit durer', 'tient seulement si on la danse vite'], 'Les Lambertiens ne rejettent pas les grands nombres, mais les résultats infinis. Un univers qui s’éteint au bout de 10^100 cycles reste fini ; les règles TVC, elles, décrivent un système qui se maintiendrait éternellement.');
     });
     c.chapter('Quand l’explication change de camp', () => {
       c.stage('elysium', { accel: 2, pop: 1, collapse: 0.6 });
@@ -717,7 +722,7 @@ const course = defineCourse({
     // ============================================================== exam
     c.module('exam');
     c.clinicCase({
-      id: 'exam-gap', exam: true, title: 'une Copie qui sent un saut', scene: 'dust', fault: { slices: 24, missing: 1 },
+      id: 'exam-gap', exam: true, title: 'une Copie qui sent un saut', scene: 'dustCase', fault: { slices: 24, missing: 1 },
       observe: 'Une Copie est calculée en tranches réparties au hasard sur des machines dispersées. Elle compte de un à dix, comme Paul. Mais, à un moment, son souvenir saute : la pièce change d’un coup, sans transition. Reconstruite par la règle, son histoire tient en deux morceaux.',
       choices: ['un instant n’a jamais été calculé', 'les tranches ont été calculées dans le désordre', 'le modèle a été dispersé sur trop de machines'],
       explain: 'Le désordre et la dispersion ne laissent aucune trace : la règle retrouve l’ordre. Deux morceaux, c’est un trou : un instant manque, et rien ne relie ses deux bords.',

@@ -43,7 +43,7 @@ function hud(ctx: CanvasRenderingContext2D, x: number, y: number, d: Day, e: Epi
   const lines = [
     `jour ${fr(d.t)}`,
     `contagieux ${fr(d.I)}`,
-    `déjà rétablis ou vaccinés ${fr(d.R)}`,
+    `déjà guéris ou vaccinés ${fr(d.R)}`,
     `lits occupés ${fr(d.beds)} sur ${fr(BEDS)}`,
   ];
   lines.forEach((l, i) => ctx.fillText(l, x, y + i * 17));
@@ -79,7 +79,7 @@ export const stage = () => canvasStage({
       }
       hud(ctx, safe.x + 12, safe.y + 16, d, e);
       ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'left';
-      const legend: [string, string][] = [['susceptible', COL.S], ['contagieux', COL.I], ['rétabli', COL.R], ['vacciné', COL.V]];
+      const legend: [string, string][] = [['jamais malade', COL.S], ['contagieux', COL.I], ['guéri', COL.R], ['vacciné', COL.V]];
       let lx = left;
       for (const [label, col] of legend) {
         ctx.fillStyle = col; ctx.beginPath(); ctx.arc(lx + 4, safe.y + safe.h - 10, 4, 0, Math.PI * 2); ctx.fill();

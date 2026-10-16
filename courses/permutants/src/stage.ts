@@ -82,8 +82,30 @@ export const stage = () => canvasStage({
         if (ci > 0) { ctx.fillStyle = C.red; ctx.fillRect(xb - 4, y + k, N * k + 8, 2); y += 4 * k; }
         for (const i of c) { if (n++ < rebuilt) rows(ctx, [d.frames[i]], 0, 1, xb, y, k, hue(i)); y += k; }
       });
-      hud(ctx, safe, [`${fr(T)} instants en ${fr(Math.round(s.slices ?? 1))} tranche${(s.slices ?? 1) > 1 ? 's' : ''} mélangée${(s.slices ?? 1) > 1 ? 's' : ''}`, 'à gauche : l’ordre de calcul · à droite : l’ordre retrouvé'],
+      hud(ctx, safe, [`${fr(T)} instants en ${fr(Math.round(s.slices ?? 1))} tranche${(s.slices ?? 1) > 1 ? 's' : ''} mélangée${(s.slices ?? 1) > 1 ? 's' : ''}`, 'à gauche : l’ordre de calcul', 'à droite : l’ordre retrouvé'],
         d.outcome === 'intact' ? 'une seule histoire, sans saut' : `${fr(d.chains.length)} morceaux : la règle ne relie pas les bords du trou`, d.outcome === 'intact' ? C.green : C.red);
+    },
+  },
+  // a clinic case: the life the Copy lived, put back in order, and nothing of
+  // how it was computed — the symptom, not the setting
+  dustCase: {
+    label: 'La vie de la Copie, remise en ordre',
+    prepare: (s: V) => dustOf(Math.round(s.slices ?? 1), Math.round(s.missing ?? 0), 40, 36),
+    draw(ctx, w, h, t, _s, data, safe) {
+      const d = data as DustRun;
+      background(ctx, w, h);
+      const a = area(safe, 80), T = d.frames.length, N = d.frames[0].length;
+      const k = Math.max(1, Math.min((a.w - 16) / N, (a.h - 12) / (T + 4 * d.chains.length))), ph = (t % 10) / 10;
+      const rebuilt = Math.floor(Math.min(1, ph * 1.6) * T);
+      const x = a.x + (a.w - N * k) / 2;
+      const hue = (i: number) => `hsl(${30 + (i / T) * 200}, 75%, 62%)`;
+      let y = a.y, n = 0;
+      d.chains.forEach((c, ci) => {
+        if (ci > 0) { ctx.fillStyle = C.red; ctx.fillRect(x - 4, y + k, N * k + 8, 2); y += 4 * k; }
+        for (const i of c) { if (n++ < rebuilt) rows(ctx, [d.frames[i]], 0, 1, x, y, k, hue(i)); y += k; }
+      });
+      hud(ctx, safe, ['la vie de la Copie, remise en ordre par la règle'],
+        d.outcome === 'intact' ? 'une seule histoire, sans saut' : `${fr(d.chains.length)} morceaux : le vécu saute`, d.outcome === 'intact' ? C.green : C.red);
     },
   },
   // -------------------------------------------------------------- Elysium
@@ -116,7 +138,7 @@ export const stage = () => canvasStage({
       }
       const m = g.margin[k];
       const outcome = { surplus: 'surplus croissant', 'early-deficit': 'manque, puis surplus', 'late-deficit': 'surplus, puis manque', deficit: 'manque permanent' }[g.outcome];
-      hud(ctx, safe, [`génération ${fr(gen)} · arête ${fr(BOOK.edge + 2 * gen)} processeurs`, `disponibles ÷ nécessaires : ${m >= 100 ? fr(m) : fr(m, 2)}`, collapse > 0 ? 'des processeurs ne répondent plus' : `Temps standard en t^${fr(s.accel ?? 2, 1)}`], outcome, m >= 1 ? C.green : C.red);
+      hud(ctx, safe, [`génération ${fr(gen)} · arête ${fr(BOOK.edge + 2 * gen)} processeurs`, `disponibles ÷ nécessaires : ${m >= 100 ? fr(m) : fr(m, 2)}`, collapse > 0 ? 'des processeurs ne répondent plus' : `besoins des Élysiens en t^${fr(s.accel ?? 2, 1)}`], outcome, m >= 1 ? C.green : C.red);
     },
   },
   // ----------------------------------------------------- Cosmoplexe: heat

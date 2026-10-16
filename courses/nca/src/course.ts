@@ -389,18 +389,20 @@ const course = defineCourse({
     });
     c.chapter('L’information avance d’une case par pas', () => {
       c.stage('maze');
-      c.diagram('cone');
+      c.diagram(null);
       c.ask('q-cone', 'Une cellule au centre d’une grille 21 × 21 change d’état. Combien de pas faut-il, au moins, pour qu’une cellule du bord puisse le savoir ?', [`${fr(F1)} pas`, '1 pas', '21 pas', '441 pas'], `À chaque pas, l’information ne passe que d’une cellule à sa voisine : le bord est à ${fr(F1)} cases du centre.`);
+      c.diagram('cone', { arg: 'sync' });
       c.step('Un cône d’influence', `À chaque pas, une cellule ne lit que ses voisines : une information avance d’une case au plus. Après t pas, elle couvre un carré de 2t + 1 cases de côté. Il faut ${fr(F1)} pas pour qu’elle atteigne tous les bords d’une grille 21 × 21.`, {
         tools: ['G1'],
         claims: [{ text: `${fr(F1)} pas pour couvrir la grille`, check: () => F1 === 10 || `${F1}` }],
       });
+      c.diagram('cone');
       c.step('Des mises à jour au hasard', `Dans l’article, une cellule ne se met pas à jour à chaque pas : elle le fait avec une probabilité p = ${fr(PAPER.pFire, 1)}, tirée au hasard pour chaque cellule. Ce taux de mise à jour ralentit la propagation : avec p = ${fr(PAPER.pFire, 1)}, il faut ${fr(F08)} pas au lieu de ${fr(F1)} pour couvrir la grille.`, {
         claims: [{ text: 'le hasard ralentit la propagation', check: () => F08 > F1 || `${F08}` }],
       });
       c.experiment({
         title: 'Faites avancer le signal', prompt: 'Réglez le nombre de pas et le taux de mise à jour. La case blanche, au centre, a changé d’état au départ.',
-        predict: { question: 'Avec p = 1, combien de pas faut-il pour informer toute la grille 21 × 21 ?', choices: [fr(F1), fr(2 * F1), fr(21 * 21)], answer: 0 },
+        predict: { question: `Avec p = 0,5, une cellule ne se met à jour qu’un pas sur deux en moyenne. Combien de pas faut-il pour informer toute la grille 21 × 21 ?`, choices: [`plus de ${fr(2 * F1)}`, `${fr(2 * F1)} exactement`, `${fr(F1)}, comme avec p = 1`], answer: 0 },
         controls: [
           { type: 'range', key: 'steps', label: 'pas', min: 0, max: 30, step: 1, fmt: dec(0) },
           { type: 'range', key: 'cp', label: 'taux de mise à jour p', min: 0.2, max: 1, step: 0.05, fmt: dec(2) },
@@ -416,8 +418,9 @@ const course = defineCourse({
     });
     c.chapter('Une règle apprise : l’automate cellulaire neuronal', () => {
       c.stage('maze');
-      c.diagram('ncaCell');
+      c.diagram(null);
       c.step('Un état à plusieurs canaux', `Dans une NCA, l’état d’une cellule est une liste de nombres, ses canaux : ${fr(PAPER.mazeC)} pour les labyrinthes. Les canaux d’entrée portent le problème (mur, case libre, extrémité) et ne changent jamais. Les canaux de sortie portent la réponse. Les canaux cachés servent de mémoire de calcul.`);
+      c.diagram('ncaCell');
       c.step('Percevoir, calculer, ajouter', 'À chaque mise à jour, la cellule calcule une perception : des combinaisons pondérées des états de ses neuf cellules. Un petit réseau de neurones transforme cette perception en une correction Δx, ajoutée à son état. Toutes les cellules utilisent le même réseau, avec les mêmes poids.', { tools: ['R1'] });
       c.step('Pas d’horloge commune', `Chaque cellule se met à jour avec le taux de mise à jour p = ${fr(PAPER.pFire, 1)}, indépendamment des autres : les mises à jour sont asynchrones. Rien ne coordonne les cellules ; seule la règle partagée les fait agir ensemble.`);
       c.step('Une règle apprise, ici écrite', 'Dans l’article, les poids du réseau sont appris à partir d’exemples de problèmes et de leurs solutions. Pour voir ce qu’une telle règle peut faire, ce cours écrit à la main deux règles qui respectent les mêmes contraintes : voisinage 3 × 3, même règle partout, mises à jour au hasard.');
@@ -434,8 +437,9 @@ const course = defineCourse({
     c.module('m2');
     c.chapter('Explorer depuis les extrémités', () => {
       c.stage('maze');
-      c.diagram('rules');
+      c.diagram(null);
       c.ask('q-onpath', 'Une case ne voit que ses quatre voisines. Peut-elle savoir qu’elle est sur le chemin entre les deux extrémités ?', ['oui, après des échanges répétés', 'non, il faut voir tout le labyrinthe', 'oui, si elle touche une extrémité', 'non, sauf sur une petite grille'], 'Seule, elle ne le sait pas ; des messages passés de voisine en voisine le lui apprennent.');
+      c.diagram('rules', { arg: 'wave' });
       c.step('Le labyrinthe vu par les cellules', `Le labyrinthe du fond a ${fr(MZ.side)} × ${fr(MZ.side)} cases, dont ${fr(MZ.open)} libres. Le canal d’entrée de chaque case dit si c’est un mur, une case libre ou l’une des deux extrémités. Chaque case libre doit finir par dire si elle est sur le chemin : ${fr(MZ.pathLen)} cases le sont.`, {
         claims: [{ text: 'un seul chemin, plus court que le nombre de cases libres', check: () => MZ.pathLen < MZ.open }],
       });
@@ -446,7 +450,7 @@ const course = defineCourse({
     c.chapter('Élaguer les impasses', () => {
       c.stage('maze');
       c.diagram('rules');
-      c.step('Une impasse se reconnaît de près', 'Seconde règle : une case atteinte qui a au plus une voisine encore vivante est le bout d’une impasse : elle meurt. Les murs ne comptent pas comme voisines. Les extrémités ne meurent jamais. Sur la scène, les cases mortes deviennent bleu pâle.');
+      c.step('Une impasse se reconnaît de près', 'Seconde règle, l’élagage : une case atteinte qui a au plus une voisine encore vivante est le bout d’une impasse : elle meurt. Les murs ne comptent pas comme voisines. Les extrémités ne meurent jamais. Sur la scène, les cases mortes deviennent bleu pâle.');
       c.step('La mort remonte la branche', 'Quand le bout d’une impasse meurt, la case d’avant n’a plus qu’une voisine vivante : elle meurt à son tour. L’élagage remonte ainsi chaque impasse jusqu’au carrefour. L’article observe ce retour en arrière dans ses automates entraînés (figure 2A).');
       c.step('La réponse dans chaque case', 'Une case du vrai chemin garde toujours deux voisines vivantes, celles d’avant et d’après : elle ne meurt jamais. À la fin, les cases atteintes et vivantes sont exactement le chemin. Chaque case lit la réponse dans son propre état.', {
         claims: [{ text: 'le chemin n’est jamais élagué', check: () => model.checks.find((k) => k.name.startsWith('l’élagage ne touche'))!.run() ?? true }],
@@ -582,7 +586,7 @@ const course = defineCourse({
       c.step('Ne pas payer deux fois le même essai', 'Beaucoup d’essais finissent par prédire la même grille. L’article les regroupe en niches à quelques moments du déroulement, garde au plus trois essais par niche et divise à chaque fois le nombre d’essais par deux. Le calcul total ne vaut plus qu’une part de K × D.', {
         claims: [{ text: 'm = 4 : 53,1 % économisés', check: () => near(1 - pruneShare(4), 0.531, 0.002) }],
       });
-      c.numeric('q-prune', 'Avec quatre tranches (m = 4), quelle part du calcul de K essais sur D pas l’élagage des niches utilise-t-il, en % ?', pruneShare(4) * 100, `(2 − 2⁻³) / 4 ≈ ${fr(pruneShare(4), 3)}, soit environ ${fr(pruneShare(4) * 100, 1)} % : ${fr((1 - pruneShare(4)) * 100, 1)} % sont économisés. Au sudoku difficile, à calcul égal, l’article passe ainsi de ${fr(PAPER.pruneBaseAcc, 1)} % à ${fr(PAPER.pruneAcc, 1)} %.`, { unit: '%', tol: 0.5 });
+      c.numeric('q-prune', 'Avec trois tranches (m = 3), quelle part du calcul de K essais sur D pas l’élagage des niches utilise-t-il, en % ?', pruneShare(3) * 100, `Les trois tranches calculent K, K/2 puis K/4 essais : (1 + ½ + ¼) / 3 = (2 − 2⁻²) / 3 ≈ ${fr(pruneShare(3), 3)}, soit environ ${fr(pruneShare(3) * 100, 1)} % : ${fr((1 - pruneShare(3)) * 100, 1)} % sont économisés. Au sudoku difficile, à calcul égal, l’article passe ainsi de ${fr(PAPER.pruneBaseAcc, 1)} % à ${fr(PAPER.pruneAcc, 1)} %.`, { unit: '%', tol: 0.5 });
       c.exercise('trialsCalc', 'Dans l’atelier, calculez la réussite de trois essais en parallèle.');
       c.explain('e-noise', 'Expliquez pourquoi un peu de hasard (des mises à jour au hasard, un bruit passager) aide la grille à se résoudre, alors qu’un bruit qui ne s’arrête jamais l’en empêche.', 'Avec des mises à jour au même instant, deux voisines en conflit changent ensemble et restent en conflit : le hasard brise cette symétrie. Une grille peut aussi rester coincée dans un minimum local, une couture qu’aucune cellule seule ne peut défaire ; un bruit passager déplace la couture jusqu’à la faire sortir. Mais le bruit crée aussi des conflits : il faut l’arrêter pour que la règle les efface avant la lecture.');
     });

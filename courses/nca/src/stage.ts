@@ -4,7 +4,7 @@
 // side with the one the board confidence picks).
 
 import { canvasStage } from '@coursekit/ui';
-import { fr } from '@coursekit/core';
+import { fr, pct } from '@coursekit/core';
 import { GRID, GRID_OUTCOME, MAZE_OUTCOME, mazeOf, trialsOf, type GridRun, type MazeRun } from './model.ts';
 import { COL, drawGrid } from './diagrams.ts';
 
@@ -60,7 +60,7 @@ export const stage = () => canvasStage({
       const outcome = k < r.steps ? (done ? 'résolu' : 'en cours') : MAZE_OUTCOME[r.outcome];
       hud(ctx, safe.x + 12, safe.y + 16, [
         `labyrinthe ${fr(S)} × ${fr(S)} · pas ${fr(k)} sur ${fr(r.p.D)}`,
-        `taux de mise à jour ${fr(r.p.p, 2)}${r.p.adaptive ? ` · cellules sûres ${fr(r.p.plow, 2)}` : ''}`,
+        `mises à jour : ${pct(r.p.p)} par pas${r.p.adaptive ? ` · cellules sûres ${fr(r.p.plow, 2)}` : ''}`,
         `cases mal classées : ${fr(r.wrong[k])}`,
       ], outcome, k < r.steps ? done : r.outcome === 'solved');
     },

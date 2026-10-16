@@ -257,9 +257,9 @@ const course = defineCourse({
     post: [
       { id: 'p1', pair: 'b1', skill: 'La croissance exponentielle', q: choice('Une rumeur : chaque personne qui l’apprend la répète à 3 personnes le lendemain. Le premier jour, une personne la connaît. Combien l’apprennent le sixième jour ?', ['243', '18', '15', '729'], '3⁵ = 243 nouvelles personnes le sixième jour.') },
       { id: 'p2', pair: 'b2', skill: 'La fin d’une épidémie', q: choice('Après le pic d’une épidémie sans mesures, les nouveaux cas diminuent parce que…', ['les susceptibles sont devenus rares', 'le virus a perdu de sa force', 'les malades restent chez eux', 'toute la ville a été infectée'], 'Un malade croise surtout des personnes immunisées : il contamine moins d’une personne en moyenne.') },
-      { id: 'p3', pair: 'b3', skill: 'Le seuil d’immunité', q: choice('Une maladie a un R0 de 4. Quel est son seuil d’immunité collective ?', ['75 %', '100 %', '25 %', '40 %'], '1 − 1/4 = 75 %.') },
+      { id: 'p3', pair: 'b3', skill: 'Le seuil d’immunité', q: choice('Une maladie a un R0 de 4. Un pays vaccine 70 % de sa population avec un vaccin parfait. Un malade arrive : une épidémie peut-elle démarrer ?', ['oui, chaque malade en contamine encore 1,2', 'non, plus de la moitié du pays est vaccinée', 'non, 70 % protège contre toute maladie', 'oui, mais seulement parmi les vaccinés'], 'R au départ = 4 × 0,3 = 1,2, plus grand que 1. Le seuil est 1 − 1/4 = 75 % : 70 % ne suffit pas.') },
       { id: 'p4', pair: 'b4', skill: 'R au-dessus ou en dessous de 1', q: choice('Des mesures font passer R de 1,5 à 0,9. L’épidémie…', ['commence à reculer', 'progresse plus lentement', 'continue au même rythme', 's’arrête le lendemain'], 'Sous 1, chaque malade est remplacé par moins d’un nouveau malade : le nombre de cas diminue, progressivement.') },
-      { id: 'p5', pair: 'b5', skill: 'Le moment des mesures', q: choice('Les cas doublent tous les 3 jours. Les mesures sont repoussées de 9 jours. Au moment d’agir, les contagieux sont…', ['8 fois plus nombreux', '3 fois plus nombreux', '9 fois plus nombreux', 'un peu plus nombreux'], '9 jours font 3 doublements : 2³ = 8.') },
+      { id: 'p5', pair: 'b5', skill: 'Le moment des mesures', q: choice('Le nombre de malades double chaque semaine. Un gouvernement hésite entre agir maintenant et attendre trois semaines. S’il attend, le jour où il agit, les malades seront…', ['environ 8 fois plus nombreux', 'environ 3 fois plus nombreux', 'à peu près aussi nombreux', 'environ 6 fois plus nombreux'], 'Trois semaines font 3 doublements : 2³ = 8.') },
     ],
   },
   diagrams: DIAGRAMS,
@@ -285,9 +285,9 @@ const course = defineCourse({
     });
     c.chapter('De personne à personne', () => {
       c.stage('town');
-      c.diagram('r0');
       c.ask('q-low', 'Une maladie ne se transmet qu’à 3 % des contacts. Peut-elle provoquer une épidémie ?', ['oui, si chaque malade a assez de contacts', 'non, 3 % est une probabilité trop faible', 'non, sauf si la maladie est très grave', 'oui, mais seulement pendant l’hiver'], 'Ce qui compte est le nombre total de personnes qu’un malade contamine, sur tous ses contacts et toute sa maladie.');
       c.step('Trois facteurs', 'Un malade transmet la maladie lors de ses rencontres. Trois nombres décident de combien de personnes il contamine : le nombre de personnes qu’il rencontre chaque jour, la probabilité qu’une rencontre transmette la maladie, et le nombre de jours pendant lesquels il est contagieux.');
+      c.diagram('r0');
       c.step('Le nombre R0', `On multiplie les trois facteurs pour obtenir R0 : le nombre moyen de personnes qu’un malade contamine quand personne n’est immunisé. Dans la ville du cours : ${fr(BASE.contacts)} contacts par jour × ${fr(BASE.p, 2)} × ${fr(BASE.dur)} jours = ${fr(R0, 1)}.`, {
         code: 'R0 = contacts × probabilité × durée',
         claims: [{ text: `R0 = ${fr(R0, 1)}`, check: () => near(R0, 2.4, 0.001) }],
@@ -310,8 +310,9 @@ const course = defineCourse({
     });
     c.chapter('Une croissance exponentielle', () => {
       c.stage('town');
+      c.diagram(null);
+      c.ask('q-linear', 'Un village compte 5 malades le lundi et 15 le mercredi. Si rien ne change, combien le dimanche ?', ['environ 135', 'environ 35', 'environ 45', 'environ 60'], 'Le nombre ne gagne pas 10 malades tous les deux jours : il triple tous les deux jours. 45 le vendredi, 135 le dimanche.');
       c.diagram('tree');
-      c.ask('q-linear', 'Une ville compte 10 malades le 1er du mois et 20 le 5. Si rien ne change, combien le 13 ?', ['environ 80', 'environ 30', 'environ 40', 'environ 50'], 'Le nombre ne gagne pas 10 cas tous les 4 jours : il double tous les 4 jours. 40 le 9, 80 le 13.');
       c.step('Génération après génération', `Un malade en contamine R0 ; chacun d’eux en contamine R0 à son tour, et ainsi de suite. La génération n compte R0 puissance n cas. Avec R0 = ${fr(R0, 1)}, la cinquième génération compte déjà ${fr(R0 ** 5)} cas, issus d’un seul malade. Si R0 est plus petit que 1, chaque génération est plus petite que la précédente.`, {
         tools: ['E1'],
         claims: [{ text: `cinquième génération : ${fr(R0 ** 5)} cas`, check: () => near(R0 ** 5, 80, 0.01) }],
@@ -390,7 +391,7 @@ const course = defineCourse({
         claims: [{ text: `réduire de ${pct(1 - 1 / R0)}`, check: () => near(1 - 1 / R0, 0.583, 0.01) }],
       });
       c.exercise('levers', 'Dans l’atelier, rangez des mesures selon le facteur de R0 qu’elles réduisent.');
-      c.question('q-iso', 'L’isolement des malades dès leurs premiers symptômes réduit surtout…', ['la durée contagieuse', 'la probabilité de transmission', 'le nombre d’habitants', 'la durée de l’immunité'], 'Un malade isolé ne rencontre plus personne : il cesse de transmettre avant d’être guéri.');
+      c.question('q-iso', `Un dépistage permet d’isoler chaque malade au bout de 3 jours au lieu de ${fr(BASE.dur)} ; rien d’autre ne change. Que devient R0, qui valait ${fr(R0, 1)} ?`, [`environ ${fr(r0(BASE.contacts, BASE.p, 3), 1)} : il passe sous 1`, `toujours ${fr(R0, 1)} : les contacts sont les mêmes`, `environ ${fr(R0 * (1 - 3 / BASE.dur), 1)} : il perd trois huitièmes`, `environ ${fr(R0 * 0.8, 1)} : il baisse un peu`], `Un malade isolé ne rencontre plus personne : sa durée contagieuse passe de ${fr(BASE.dur)} à 3 jours, et R0 est proportionnel à cette durée. ${fr(R0, 1)} × 3/${fr(BASE.dur)} ≈ ${fr(r0(BASE.contacts, BASE.p, 3), 1)}.`);
     });
     c.chapter('La vaccination', () => {
       c.stage('town');
