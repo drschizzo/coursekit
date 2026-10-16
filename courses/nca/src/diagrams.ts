@@ -83,7 +83,8 @@ function cone(ctx: Ctx, e: DiagramEnv): void {
   const full = count === side * side;
   const xr = 222;
   text(ctx, `après ${fr(steps)} pas`, xr, 34, CC.fg, 12);
-  text(ctx, `taux de mise à jour ${fr(p, 2)}`, xr, 56, CC.dim, 10);
+  // arg 'sync': every cell updates at every step, before the rate is introduced
+  if (e.arg !== 'sync') text(ctx, `taux de mise à jour ${fr(p, 2)}`, xr, 56, CC.dim, 10);
   text(ctx, `cellules informées : ${fr(count)}`, xr, 86, CC.acc, 11);
   text(ctx, `sur ${fr(side * side)}`, xr, 102, CC.dim, 10);
   text(ctx, `distance couverte : ${fr(radius)}`, xr, 128, CC.fg, 11);
@@ -154,8 +155,10 @@ function rules(ctx: Ctx, e: DiagramEnv): void {
     { title: 'élaguer', nb: [W, W, R, W], before: R, after: X, say: ['une seule voisine vivante :', 'une impasse, elle meurt'] },
     { title: 'garder', nb: [R, W, R, X], before: R, after: R, say: ['deux voisines vivantes :', 'elle reste sur le chemin'] },
   ];
+  // arg 'wave': the first rule only, before the chapter on dead ends
+  const wave = e.arg === 'wave';
   const k = 16, phase = Math.floor(e.t / 1.5) % 2;
-  cases.forEach((c, i) => {
+  (wave ? cases.slice(0, 1) : cases).forEach((c, i) => {
     const ox = 14 + i * 124, cx = ox + 44, cy = 74;
     text(ctx, c.title, ox + 52, 22, CC.acc, 12, 'center');
     const pos = [[0, -1], [0, 1], [-1, 0], [1, 0]];
@@ -167,7 +170,7 @@ function rules(ctx: Ctx, e: DiagramEnv): void {
   });
   const leg: [string, string][] = [[COL.reached, 'atteinte'], [COL.dead, 'morte'], [COL.wall, 'mur'], [COL.open, 'pas encore atteinte']];
   const lx = [14, 88, 146, 194];
-  leg.forEach(([col, lab], i) => { cell(ctx, lx[i], 206, 12, col); text(ctx, lab, lx[i] + 16, 212, CC.dim, 9); });
+  leg.forEach(([col, lab], i) => { if (wave && col === COL.dead) return; cell(ctx, lx[i], 206, 12, col); text(ctx, lab, lx[i] + 16, 212, CC.dim, 9); });
 }
 
 // --------------------------------------------- m2: a run, step by step
