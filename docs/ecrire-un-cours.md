@@ -327,7 +327,8 @@ c.clinicCase({
 ```
 
 Le cas devient un chapitre : observer, diagnostiquer (la question), corriger (l’expérience),
-justifier (l’explication écrite). Un seul réglage est en défaut, et son symptôme ne doit pas se
+justifier (l’explication écrite). `diagram` accepte `{ name, arg }` : le schéma du cas dessine
+alors une variante, qui montre le symptôme sans écrire le réglage fautif. Un seul réglage est en défaut, et son symptôme ne doit pas se
 confondre avec celui d’un autre réglage.
 
 `coursekit check` le vérifie (règle `clinic`) : avec le réglage fautif, l’objectif est faux ; en
@@ -400,6 +401,15 @@ un cours ajoute les siennes au même format.
 - **Termes définis** au glossaire, jamais employés avant leur module.
 - **Questions.** Des distracteurs plausibles, de la longueur de la bonne réponse, chacun tiré
   d’une idée fausse ; une explication qui dit pourquoi la bonne réponse est juste.
+- **La réponse ne se lit pas à l’écran.** Quand une question s’ouvre, l’élève voit l’étape
+  qu’elle suit, le schéma et la scène : aucun ne doit donner la réponse. Une question posée
+  avant l’explication vient avant `c.diagram` ; une question de vérification fait appliquer la
+  notion dans une autre situation plutôt que restituer la phrase qui précède.
+- **Une question par notion** dans le fil du cours, plus le couple test de départ / test final.
+- **L’effort suit la difficulté.** Un fait tient en une étape ; un mécanisme demande plusieurs
+  étapes, un exemple chiffré par le modèle et un schéma qui le montre.
+- **Une scène par chapitre**, choisie pour ce qu’il explique ; un schéma n’écrit pas une notion
+  avant le texte.
 - **Explications écrites.** Une consigne précise et une réponse modèle qui relie cause,
   mécanisme et effet.
 
@@ -408,6 +418,7 @@ un cours ajoute les siennes au même format.
 ```bash
 npm run tune -w courses/mon-cours      # les fenêtres du modèle
 npm run check -w courses/mon-cours     # le contenu : viser « ✓ prêt (0 remarque) »
+npx coursekit parcours courses/mon-cours/src/course.ts parcours.md   # le cours tel qu’on le lit
 npm run dev -w courses/mon-cours       # puis /?shots et une visite complète
 ```
 

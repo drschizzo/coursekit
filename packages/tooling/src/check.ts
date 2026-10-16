@@ -9,8 +9,8 @@
 // goals, test pairs and phrasing are new.
 
 import {
-  compile, controlBounds, courseMinutes, createGlossary, diagramVariants, effortMinutes, fmtMinutes,
-  type CourseDef, type QuizSpec, type Rect, type Stop, type Timeline, type Vals,
+  compile, controlBounds, courseMinutes, createGlossary, diagramVariants, effortMinutes, fmtMinutes, fr, labelsFor,
+  type Control, type CourseDef, type QuizSpec, type Stop, type Timeline, type Vals,
 } from '@coursekit/core';
 import { DH, DW, TOOL_DIAGRAMS } from '@coursekit/diagrams';
 import {
@@ -18,15 +18,12 @@ import {
   type Exercise, type WorkshopConfig,
 } from '@coursekit/exercises';
 import { mockContext, textProblems } from './mockctx.ts';
+import { SAFE_ZONES, contentWords, coverage, jaccard, norm, numbersIn, screenReader, telling, textOf, type SceneLike } from './screen.ts';
+
+export { SAFE_ZONES, type SceneLike } from './screen.ts';
 
 export interface Finding { level: 'error' | 'warning'; rule: string; msg: string }
 export interface Report { course: string; findings: Finding[]; stats: Record<string, number>; ok: boolean }
-
-/** A scene of a canvasStage, as the checker sees it (see @coursekit/ui). */
-export interface SceneLike {
-  prepare?(settings: Vals): unknown;
-  draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number, settings: Vals, data: unknown, safe: Rect): void;
-}
 
 export interface CheckOptions {
   /** the course's stage: a canvasStage's scenes are drawn and their texts checked */
@@ -35,14 +32,6 @@ export interface CheckOptions {
   stageError?: string;
 }
 
-/**
- * The two windows the stage scenes are drawn in: a wide screen, the text on
- * the left and the diagram on the right; a phone, the panels above and below.
- */
-export const SAFE_ZONES: { name: string; w: number; h: number; safe: Rect }[] = [
-  { name: 'large', w: 1440, h: 900, safe: { x: 440, y: 72, w: 560, h: 740 } },
-  { name: 'étroite', w: 390, h: 844, safe: { x: 8, y: 64, w: 374, h: 300 } },
-];
 /** The effort announced may differ from the estimate by this much before a remark. */
 const EFFORT_SLACK = 0.15;
 
@@ -179,6 +168,8 @@ export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }, o
   walk(course, tl, err, warn);
   if (opts.stageError) err('stage', `la scène ne se charge pas : ${opts.stageError}`);
   if (opts.stage?.scenes) stageWalk(tl, opts.stage.scenes, err, warn);
+  onScreen(course, tl, opts.stage?.scenes, warn);
+  repeats(course, tl, exercises, warn);
 
   const stats = {
     modules: tl.modules.filter((m) => m.kind === 'core').length,
@@ -335,3 +326,165 @@ function stageWalk(tl: Timeline, scenes: Record<string, SceneLike>, err: (rule: 
     }
   }
 }
+
+type Ask = { kind: QuizSpec['kind']; question: string; choices: string[]; answer: number; value?: number; tol?: number };
+const fmtNum = (x: number) => String(Number(x.toPrecision(4))).replace('.', ',');
+
+/** What of a question's answer can be read in these texts, or null. */
+function answerIn(q: Ask, texts: string[]): string | null {
+  const all = texts.join(' · ');
+  const nums = numbersIn(all);
+  const near = (x: number, rel: number, abs = 0) => nums.some((y) => Math.abs(y - x) <= Math.max(abs, rel * Math.abs(x), 1e-9));
+  if (q.kind === 'number' && q.value !== undefined) {
+    if (telling(q.value) && near(q.value, 0.005, q.tol ?? Math.abs(q.value) * 0.02)) return `la réponse (${fmtNum(q.value)})`;
+    return null;
+  }
+  if (q.kind === 'order') {
+    const t = norm(all);
+    const at = q.choices.map((it) => t.indexOf(norm(it)));
+    if (q.choices.length >= 3 && at.every((i) => i >= 0) && at.every((i, k) => !k || i > at[k - 1])) return 'l’ordre attendu';
+    return null;
+  }
+  const right = q.choices[q.answer], others = q.choices.filter((_, i) => i !== q.answer);
+  if (!right) return null;
+  // a figure of the right answer, and of no other choice
+  const rn = numbersIn(right).filter(telling);
+  if (rn.some((x) => near(x, 0.03)) && !others.some((o) => numbersIn(o).filter(telling).some((x) => near(x, 0.03)))) return `la bonne réponse (« ${right} »)`;
+  // its words, much more than those of the other choices
+  const pool = contentWords(all), rw = contentWords(right);
+  const rc = coverage(rw, pool);
+  if (rw.size >= 2 && rc >= 0.6 && others.every((o) => coverage(contentWords(o), pool) <= rc - 0.3)) return `la bonne réponse (« ${right} »)`;
+  return null;
+}
+
+/** Whether a clinic case's broken setting is written in these texts: its control's label and value, or « key = value ». */
+function faultIn(fault: Vals, controls: Control[], texts: string[]): string | null {
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const [key, val] of Object.entries(fault)) {
+    const c = controls.find((x) => x.key === key);
+    if (!c) continue;
+    const opt = c.options?.find((o) => o.value === val)?.label;
+    const shown = [...new Set([opt, c.fmt?.(val), fr(val, 0), fr(val, 1), fr(val, 2)].filter((s): s is string => !!s).map(norm))];
+    const label = norm(c.label);
+    for (const raw of texts) {
+      const t = norm(raw);
+      for (const v of shown) {
+        const token = new RegExp(`(?<![\\d,.])${esc(v)}(?![\\d]|,\\d)`);
+        if ((t.includes(label) && token.test(t)) || new RegExp(`(^|[^a-z])${esc(norm(key))}\\s*[=:]\\s*${esc(v)}(?![\\d]|,\\d)`).test(t)) return `${c.label} = ${opt ?? c.fmt?.(val) ?? fmtNum(val)}`;
+      }
+      if (opt && contentWords(opt).size >= 2 && t.includes(norm(opt))) return `${c.label} = ${opt}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * What the learner sees when a question opens, and when a step shows a
+ * picture:
+ *   - `spoiler`: a question (a prediction, a diagnosis) whose answer can be
+ *     read on screen — in the diagram, the stage scene or the step shown
+ *     above it; the fault of a clinic case written on its diagram or scene;
+ *   - `term-early`: a glossary term that a diagram or a scene shows before
+ *     its module, or before any step uses it — a word without its tooltip,
+ *     often a sign that the picture belongs to a later chapter.
+ */
+function onScreen(course: CourseDef, tl: Timeline, scenes: Record<string, SceneLike> | undefined, warn: (rule: string, msg: string) => void): void {
+  const screen = screenReader(course, tl, scenes);
+  const L = labelsFor(course.labels);
+  for (const st of tl.stops) {
+    const asks: { what: string; q: Ask }[] = [];
+    const fix = st.kind === 'quiz' ? tl.stops.find((x) => x.clinic?.id === st.id) : undefined;
+    if (st.kind === 'quiz' && st.quiz) asks.push({ what: fix ? `cas ${st.id}, diagnostic` : `question ${st.id}`, q: st.quiz });
+    if (st.kind === 'try' && st.predict) asks.push({ what: `prédiction de « ${st.title} »`, q: { kind: 'choice', question: st.predict.question, choices: st.predict.choices, answer: st.predict.answer ?? 0 } });
+    if (!asks.length) continue;
+    const s = screen.at(st.t);
+    const sources: { where: string; texts: string[] }[] = [];
+    if (s.diagram) sources.push({ where: `le schéma ${s.diagram.name}`, texts: s.diagram.texts });
+    if (s.scene) sources.push({ where: `la scène ${s.scene.key}`, texts: [s.scene.label, ...s.scene.texts] });
+    // the generic step before a question asked first says nothing of the answer
+    if (s.step && s.step.title !== L.askTitle) sources.push({ where: `l’étape « ${s.step.title} », affichée au-dessus`, texts: [s.step.text] });
+    for (const { what, q } of asks) {
+      for (const src of sources) {
+        const hit = answerIn(q, src.texts);
+        if (hit) warn('spoiler', `${what} : ${hit} se lit dans ${src.where}`);
+      }
+    }
+    if (fix?.clinic) {
+      for (const src of sources.slice(0, 2)) {
+        const hit = faultIn(fix.clinic.fault, fix.controls, src.texts);
+        if (hit) warn('spoiler', `cas ${st.id} : le réglage fautif (${hit}) est écrit dans ${src.where} pendant le diagnostic`);
+      }
+    }
+  }
+
+  // terms in the pictures
+  const glossary = createGlossary(course.glossary);
+  const modIdx = new Map(course.modules.map((m, i) => [m.id, i]));
+  const first = new Map<string, number>();
+  for (const c of tl.caps) for (const id of glossary.find(`${c.title} ${textOf(c)} ${c.note}`)) if (!first.has(id)) first.set(id, c.t);
+  // a question names a term too: from the start of the step it opens under
+  for (const st of tl.stops) {
+    if (!st.quiz) continue;
+    const at = tl.caps[tl.capAt(st.t)]?.t ?? st.t;
+    for (const id of glossary.find(`${st.quiz.question} ${st.quiz.choices.join(' ')}`)) if (!first.has(id) || first.get(id)! > at) first.set(id, at);
+  }
+  const reported = new Set<string>();
+  const terms = (id: string, where: string, texts: string[], t: number, mi: number) => {
+    for (const g of glossary.find(texts.join(' · '))) {
+      const term = glossary.term(g)!;
+      if (reported.has(`${id}|${g}`)) continue;
+      if (term.module && (modIdx.get(term.module) ?? -1) > mi) {
+        reported.add(`${id}|${g}`);
+        warn('term-early', `« ${term.name} » apparaît dans ${where} avant le module où il est introduit`);
+      } else if (!first.has(g) || first.get(g)! > t + 1e-6) {
+        reported.add(`${id}|${g}`);
+        warn('term-early', `« ${term.name} » apparaît dans ${where} avant toute étape qui l’emploie`);
+      }
+    }
+  };
+  for (const c of tl.caps) {
+    const t = c.t + 0.01, mi = tl.chapters[tl.chapterAt(t)].module;
+    const s = screen.at(t);
+    if (s.diagram) terms(`d:${s.diagram.name}`, `le schéma ${s.diagram.name} (étape « ${c.title} »)`, s.diagram.texts, t, mi);
+    if (s.scene) terms(`s:${s.scene.key}`, `la scène ${s.scene.key} (étape « ${c.title} »)`, [s.scene.label, ...s.scene.texts], t, mi);
+  }
+}
+
+/** Two questions that ask the same thing with the same words share more than this part of their words. */
+const REPEAT = 0.5;
+
+/**
+ * `repeat`: two questions of the course (in the reading, a prediction, the
+ * tests, a guided calculation) that ask the same thing with the same words.
+ * Asking an easy point again does not deepen it; a final question that
+ * repeats its start-test twin does not test it « in another situation ».
+ */
+function repeats(course: CourseDef, tl: Timeline, exercises: Exercise[], warn: (rule: string, msg: string) => void): void {
+  const L = labelsFor(course.labels);
+  const items: { id: string; words: Set<string>; pair?: string; group?: string }[] = [];
+  const add = (id: string, q: string, right: string, pair?: string, group?: string) => items.push({ id, words: contentWords(`${q} ${right}`), pair, group });
+  for (const st of tl.stops) {
+    if (st.kind === 'quiz' && st.quiz && st.quiz.question !== L.clinicQuestion) add(`question ${st.id}`, st.quiz.question, st.quiz.kind === 'choice' ? st.quiz.choices[st.quiz.answer] : st.quiz.kind === 'order' ? st.quiz.choices.join(' ') : '');
+    if (st.kind === 'try' && st.predict) add(`prédiction de « ${st.title} »`, st.predict.question, st.predict.choices[st.predict.answer ?? 0] ?? '');
+  }
+  const testQ = (prefix: string, its: { id: string; q: QuizSpec; pair?: string }[] | undefined) => {
+    for (const it of its ?? []) add(`${prefix} ${it.id}`, it.q.question, it.q.kind === 'choice' ? it.q.choices[it.q.answer] : '', it.pair);
+  };
+  testQ('test de départ', course.tests?.pre);
+  testQ('test final', course.tests?.post);
+  for (const ex of exercises) if (ex.kind === 'calculation') ex.steps.forEach((s, i) => add(`exercice ${ex.id} (${i + 1})`, s.prompt, '', undefined, ex.id));
+  for (let i = 0; i < items.length; i++) {
+    for (let j = i + 1; j < items.length; j++) {
+      const a = items[i], b = items[j];
+      // the steps of one guided calculation build on each other
+      if (a.words.size < 3 || b.words.size < 3 || (a.group && a.group === b.group)) continue;
+      const sim = jaccard(a.words, b.words);
+      if (sim < REPEAT) continue;
+      const twins = (a.pair && b.id === `test de départ ${a.pair}`) || (b.pair && a.id === `test de départ ${b.pair}`);
+      warn('repeat', twins
+        ? `${b.id.startsWith('test final') ? b.id : a.id} reprend les mots de sa jumelle du test de départ (${pctS(sim)} de mots communs) : posez la notion dans une autre situation`
+        : `${a.id} et ${b.id} posent la même question (${pctS(sim)} de mots communs) : gardez-en une, ou faites appliquer la notion à un autre cas`);
+    }
+  }
+}
+const pctS = (x: number) => `${Math.round(x * 100)} %`;

@@ -125,7 +125,7 @@ const course = defineCourse({
       c.step('Calculer une chute', 'Un programme ne calcule pas une trajectoire continue : il calcule la hauteur à des instants séparés d’un pas de temps h. Entre deux instants, il suppose que la vitesse change peu.', { tools: ['T4'], layers: 3 });
       c.ask('q-intuition', 'Que se passe-t-il si le pas de temps est très grand ?', ['le calcul s’écarte de la vraie chute', 'le calcul devient exact', 'la balle tombe plus lentement'], 'Un grand pas suppose la vitesse constante trop longtemps.');
       c.diagram('fallPlot');
-      c.step('Comparer au calcul fin', 'Sur le schéma, la courbe bleue est un calcul très fin, la courbe orange le calcul avec le nombre de pas choisi. Avec peu de pas, l’orange s’écarte.', { hud: (v) => `${Math.round(v.steps)} pas par seconde` });
+      c.step('Comparer au calcul fin', 'Sur le schéma, une chute sans frottement de l’air : la courbe bleue est un calcul très fin, la courbe orange le calcul avec le nombre de pas choisi. Avec peu de pas, l’orange s’écarte.', { hud: (v) => `${Math.round(v.steps)} pas par seconde` });
       c.experiment({
         title: 'Changez le pas', prompt: 'Faites varier le nombre de pas par seconde.',
         predict: { question: 'Avec 4 pas par seconde, l’écart avec le calcul fin sera…', choices: ['grand', 'nul', 'le même qu’avec 30'], answer: 0 },

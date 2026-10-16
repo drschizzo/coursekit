@@ -13,11 +13,17 @@ mérite**.
 
 | Module | Contenu |
 |---|---|
-| 1. Chercher | Arbre de jeu et minimax ; parties au hasard (biais) et intervalle de confiance (bruit) ; les quatre temps de la recherche Monte-Carlo ; le score PUCT et la constante d'exploration ; la force selon le nombre de simulations, vérifiée contre OpenSpiel. Exercices de code : PUCT (PRIMM), rétropropagation (Parsons), assemblage. |
-| 2. Apprendre une intuition | Politique et valeur ; descente de gradient sur un réseau de valeur à deux paramètres (taux d'apprentissage) ; un réseau qui généralise aux positions jamais vues, contrairement à une table. |
-| 3. Apprendre en jouant contre soi | D'AlphaGo à AlphaZero ; la boucle d'auto-jeu ; la recherche améliore la politique (mesuré) ; bruit à la racine et température, sur 5 graines. |
-| 4. AlphaNIST : du jeu au robot | Récompense rare et variance P(1 − P) ; SGS avec la formule de l'article ; points de proximité contre façonnage par potentiel (Ng et al., 1999) ; attribution du mérite, base de référence, effondrement sur 8 graines ; deux cas cliniques. |
+| 1. Chercher | Arbre de jeu (positions et suites de coups) et minimax ; parties au hasard : le biais (le coin paraît meilleur que le bord) et le bruit (intervalle de confiance) ; les quatre temps d'une simulation et le signe de la rétropropagation ; le score PUCT, son bonus qui grandit comme √N ; la force selon le nombre de simulations, et pourquoi l'arbre corrige le biais (la moyenne des coins passe sous celle des bords) ; vérification contre OpenSpiel. Exercices de code : PUCT (PRIMM), rétropropagation (Parsons), assemblage. |
+| 2. Apprendre une intuition | Politique et valeur, et ce que la politique change dans PUCT ; descente de gradient sur un réseau de valeur à deux paramètres (taux d'apprentissage), suivie dans la scène ; généraliser : le petit réseau appris sur la moitié des positions se trompe presque autant sur l'autre moitié, une table non. |
+| 3. Apprendre en jouant contre soi | D'AlphaGo à AlphaZero ; la boucle d'auto-jeu ; la recherche améliore la politique (mesuré) ; ce que le réseau a retenu : la politique généralise, la valeur moins ; varier les parties : bruit à la racine (expérience) et température (cas clinique), sur 5 graines. |
+| 4. AlphaNIST : du jeu au robot | Comment le robot apprend (REINFORCE) ; récompense rare et variance P(1 − P) ; SGS avec la formule de l'article ; le détour calculé : points de proximité contre façonnage par potentiel (Ng et al., 1999) ; attribution du mérite, base de référence, effondrement sur 8 graines ; un cas clinique (cible de SGS). |
 | Épreuve | Un cas à diagnostiquer seul (une récompense de proximité trop forte, à distinguer d'un effondrement par les graines), le test final. |
+
+Le cours suit les règles d'écriture de la skill `generate_course` : une idée difficile reçoit
+plusieurs étapes, un exemple calculé et son propre schéma ; aucune question ne se lit à l'écran
+au moment où elle s'ouvre (schéma, scène, étape au-dessus) ; chaque scène montre ce que son
+chapitre explique ; un schéma ne montre pas une notion avant le texte. `npx coursekit parcours
+src/course.ts` écrit le cours tel que l'élève le voit, pour la relecture.
 
 ## Le modèle
 
@@ -45,7 +51,10 @@ Les fenêtres réglées dans [src/tune.ts](src/tune.ts) doivent tenir **pour cha
 | MCTS pur, simulations (c = 5) | perd souvent jusqu'à 50 ; au plus 1 sur 100 dès 1 600 (avec intervalles) |
 | MCTS pur, constante c | perd souvent à 0 ; au plus 1 sur 100 de 3 à 10 ; perd encore à 0,1 et 100 |
 | Auto-jeu, bruit × température (5 graines) | nominal : ≥ 4 graines sous 5 % ; sans température : aucune (cas clinique) ; sans bruit : ≤ 2 |
-| Auto-jeu nominal | la recherche choisit nettement plus souvent un coup optimal que la politique ; la politique bat le hasard sur les positions jamais vues |
+| Auto-jeu nominal | la recherche choisit nettement plus souvent un coup optimal que la politique ; la politique bat le hasard sur les positions jamais vues ; la valeur s'y trompe davantage |
+| Recherche pure, coins et bords | à 25 simulations, les coins paraissent meilleurs (graine 1) ; dès 400, ils passent sous les bords (5 graines) |
+| Généraliser (réseau de valeur) | appris sur la moitié des positions : erreur presque la même sur l'autre moitié ; une table : au moins 1,5 fois plus |
+| Le détour, calculé | points de proximité : le détour paie jusqu'à w = 2,5, forcer dès w = 3 ; potentiel : seul le succès compte, quel que soit w |
 | Descente de gradient, η | trop lent ≤ 0,03 ; minimum de 0,1 à 0,65 ; diverge ≥ 0,7 |
 | Robot, tirage | uniforme : trop lent ; SGS : maîtrisé ; tâche complète seule : bloqué |
 | Robot, cible de SGS | maîtrisé de 0,1 à 0,5 ; ≥ 0,9 : réussit l'entraînement, échoue la tâche (cas clinique) |

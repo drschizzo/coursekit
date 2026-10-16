@@ -3,10 +3,14 @@
 //   coursekit check <course.ts>   the four levels of checks, a readable report
 //                                 (with the scenes of stage.ts, next to it)
 //   coursekit stats <course.ts>   chapters, steps, questions, estimated time
+//   coursekit parcours <course.ts> [out.md]
+//                                 the course as the learner meets it, in
+//                                 reading order: texts, what the diagram and
+//                                 the scene show, questions and answers
 //   coursekit tune <tune.ts>      sweep the model's parameters, check its windows
 //   coursekit new <dir> [title]   a new course project, ready to run
 
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { scaffold } from './scaffold.ts';
@@ -50,6 +54,14 @@ async function main(): Promise<number> {
     for (const [k, v] of Object.entries(r.stats)) console.log(`${k.padEnd(14)} ${v}`);
     return 0;
   }
+  if (cmd === 'parcours' && arg) {
+    const { parcours } = await import('./parcours.ts');
+    const { stage } = await loadStage(arg);
+    const md = parcours(await load(arg), stage?.scenes);
+    if (rest[0]) { writeFileSync(resolve(rest[0]), md); console.log(`Parcours écrit dans ${rest[0]}.`); }
+    else console.log(md);
+    return 0;
+  }
   if (cmd === 'tune' && arg) {
     const { runTune } = await import('./tune.ts');
     const mod = await import(pathToFileURL(resolve(arg)).href);
@@ -68,7 +80,7 @@ async function main(): Promise<number> {
     console.log(`Projet créé dans ${arg}. Ensuite, à la racine du dépôt : npm install, puis npm run dev -w ${arg}.`);
     return 0;
   }
-  console.log('usage : coursekit check <course.ts> | stats <course.ts> | tune <tune.ts> | new <dossier> [titre]');
+  console.log('usage : coursekit check <course.ts> | stats <course.ts> | parcours <course.ts> [sortie.md] | tune <tune.ts> | new <dossier> [titre]');
   return 2;
 }
 

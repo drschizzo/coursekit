@@ -11,7 +11,10 @@ export default defineCourse({
     { id: 'm1', title: 'Un', pitch: '—', goals: ['—'], summary: ['—'] },
     { id: 'm2', title: 'Deux', pitch: '—', goals: ['—'], summary: [] },
   ],
-  glossary: [{ id: 'late', name: 'notion tardive', def: '—', module: 'm2' }],
+  glossary: [
+    { id: 'late', name: 'notion tardive', def: '—', module: 'm2' },
+    { id: 'early', name: 'notion précoce', def: '—', module: 'm1' },
+  ],
   tests: {
     pre: [{ id: 'b1', skill: 'x', q: choice('?', ['a', 'b'], '—') }],
     post: [{ id: 'p1', skill: 'x', q: choice('?', ['a', 'b'], '—') }],
@@ -26,6 +29,13 @@ export default defineCourse({
       ctx.fillText('premier', 40, 100);
       ctx.fillText('second', 42, 101);
       ctx.fillText(`rapport ${(1 / e.v.k) * 0}`, 40, 200);
+    },
+    // a diagram that gives the answers of the questions asked under it
+    tells: (ctx: CanvasRenderingContext2D) => {
+      ctx.font = '10px sans-serif';
+      ctx.fillText('après deux coups : 72 positions', 10, 20);
+      ctx.fillText('saisir → orienter → insérer', 10, 40);
+      ctx.fillText('la notion tardive, la notion précoce', 10, 60);
     },
   },
   defaults: { k: 1, j: 0 },
@@ -42,6 +52,15 @@ export default defineCourse({
       c.step('Schéma', 'Un schéma qui n’existe pas.', { hud: () => { throw new Error('boum'); } });
       c.question('q1', 'Laquelle ?', ['une réponse juste nettement plus longue que les autres', 'non', 'faux'], '—');
       c.exercise('inconnu', '—');
+    });
+    c.chapter('À l’écran', () => {
+      c.diagram('tells');
+      c.step('Trop dit', 'Un schéma qui en dit trop.');
+      c.numeric('q-num', 'Combien de positions après deux coups ?', 72, '—', { tol: 0 });
+      c.order('q-ord', 'Dans quel ordre ?', ['saisir', 'orienter', 'insérer'], '—');
+      c.step('Redite', 'Une étape qui emploie enfin la notion précoce.');
+      c.question('q-r1', 'Pourquoi le robot reste-t-il bloqué sans aucun succès ?', ['aucun épisode ne reçoit de récompense', 'ses pas sont trop grands', 'il apprend trop vite'], '—');
+      c.question('q-r2', 'Pourquoi le robot reste-t-il bloqué, sans un seul succès ?', ['aucun épisode ne reçoit de récompense', 'ses lots sont trop petits', 'il explore trop'], '—');
     });
     c.module('m2');
     c.chapter('Deux', () => {
@@ -84,6 +103,8 @@ export const faultyStage = {
         ctx.font = '12px sans-serif';
         ctx.fillText('une lecture à gauche de la zone utile', safe.x - 200, safe.y + 20);
         ctx.fillText(`rapport ${s.j ? 1 / 0 : NaN}`, safe.x + 10, safe.y + 60);
+        // the setting of the case, written on the scene: the diagnosis is read, not made
+        ctx.fillText(`réglage k = ${s.k ?? 1}`, safe.x + 10, safe.y + 90);
       },
     },
     broken: { prepare: () => { throw new Error('simulation impossible'); }, draw() {} },

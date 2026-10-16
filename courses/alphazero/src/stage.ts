@@ -1,13 +1,17 @@
-// The course's stage: four scenes drawn from the model, behind the panels.
-// A go board (the problem), the search tree of MCTS growing from the course's
-// position, games of self-play replayed, and the robot assembling a nut on a
-// bolt with the policy its training produced.
+// The course's stage: scenes drawn from the model, behind the panels, each
+// for the chapters that explain what it shows. A go board (the problem); the
+// game tree of tic-tac-toe (minimax); random games played from the course's
+// position (the estimate by playouts); the search tree of MCTS growing from
+// that position; a neural network, the AlphaZero one or the two-parameter
+// value network whose parameters follow gradient descent; games of self-play
+// replayed; and the robot assembling a nut on a bolt with the policy its
+// training produced.
 
 import { fr, pct } from '@coursekit/core';
 import { canvasStage } from '@coursekit/ui';
 import {
-  FACTS, FORK, MCTS_NOMINAL, ROBOT_OUTCOME, TRAIN, TRAIN_OUTCOME, after, bestMoves, checkpointAt, rng, robotOf, rolloutEval,
-  search, trainOf, type Node, type RobotRun, type TrainRun,
+  EMPTY, FACTS, FORK, GD, MCTS_NOMINAL, ROBOT_OUTCOME, TRAIN, TRAIN_OUTCOME, after, bestMoves, checkpointAt, gdOf, legal, play, playoutGames, rng,
+  robotOf, rolloutEval, search, trainOf, type Node, type RobotRun, type TrainRun,
 } from './model.ts';
 
 type Ctx = CanvasRenderingContext2D;
@@ -79,12 +83,155 @@ function prepareTree(s: Record<string, number>): TreeData {
   return { root: res.root, best: res.best, sims, c, nodes };
 }
 
+// ------------------------------------------------------------ the game tree
+
+/** A small board at (cx, cy), for the nodes of the game tree. */
+function mini(ctx: Ctx, b: number[], cx: number, cy: number, s: number): void {
+  ctx.strokeStyle = FAINT; ctx.lineWidth = 1; ctx.strokeRect(cx - s / 2, cy - s / 2, s, s);
+  const c = s / 3;
+  b.forEach((v, i) => {
+    if (!v) return;
+    ctx.fillStyle = v === 1 ? INK : BLUE;
+    ctx.fillRect(cx - s / 2 + (i % 3) * c + c * 0.2, cy - s / 2 + Math.floor(i / 3) * c + c * 0.2, c * 0.6, c * 0.6);
+  });
+}
+
+// ---------------------------------------------------------- random playouts
+
+/** Random games after O's corner (cell 2) and after O's edge (cell 1), as the model plays them. */
+const PLAYOUTS = (() => { let g: { m: number; moves: number[]; v: number }[] | null = null; return () => (g ??= [2, 1].flatMap((m) => playoutGames(FORK, m, 40).map((x) => ({ m, ...x })))); })();
+
 // ---------------------------------------------------------------- the robot
 
 interface RobotData { run: RobotRun }
+/** The input of the network for the course's position: the cells of the player to move (O), then X's. */
+const encodeFork = (): number[] => { const x = Array(18).fill(0); FORK.forEach((v, i) => { if (v === -1) x[i] = 1; else if (v === 1) x[9 + i] = 1; }); return x; };
 const STEP_NAMES = ['saisir', 'orienter', 'approcher', 'aligner', 'insérer'];
 
 export const stage = () => canvasStage({
+  gametree: {
+    label: 'L’arbre du morpion, depuis le plateau vide',
+    draw(ctx, w, h, t, _s, _d, safe) {
+      bg(ctx, w, h);
+      const top = hud(ctx, safe, [
+        ['l’arbre du morpion, depuis le plateau vide', INK],
+        ['une rangée par coup joué, une branche par coup possible', DIM],
+        ['la rangée 3 est déjà trop dense pour être dessinée', DIM],
+      ]) + 14;
+      const rows = 4, rowH = Math.max(30, (safe.y + safe.h - 20 - top) / rows);
+      // the row labels on the left, the tree on their right
+      const left = 62, X = (f: number) => safe.x + left + f * (safe.w - left - 16);
+      const shownRows = 1 + (Math.floor(t / 1.5) % (rows + 2));
+      ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      // row 1: the 9 first moves of X, as small boards; row 2: O's 8 answers under each; row 3: a dense band
+      const s1 = Math.min(26, (safe.w - left - 16) / 9 - 6, rowH * 0.6);
+      const y = (k: number) => top + k * rowH + rowH * 0.4;
+      if (shownRows > 0) mini(ctx, EMPTY, X(0.5), y(0), s1);
+      legal(EMPTY).forEach((m, i) => {
+        const fx = (i + 0.5) / 9;
+        if (shownRows > 1) {
+          ctx.strokeStyle = FAINT; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X(0.5), y(0) + s1 / 2); ctx.lineTo(X(fx), y(1) - s1 / 2); ctx.stroke();
+          mini(ctx, play(EMPTY, m), X(fx), y(1), s1);
+        }
+        if (shownRows > 2) {
+          const b1 = play(EMPTY, m);
+          legal(b1).forEach((m2, j) => {
+            const f2 = (i + (j + 0.5) / 8) / 9;
+            ctx.strokeStyle = FAINT; ctx.beginPath(); ctx.moveTo(X(fx), y(1) + s1 / 2); ctx.lineTo(X(f2), y(2) - 3); ctx.stroke();
+            ctx.fillStyle = m2 === 4 ? ACC : BLUE; ctx.beginPath(); ctx.arc(X(f2), y(2), 2, 0, Math.PI * 2); ctx.fill();
+            if (shownRows > 3) { ctx.strokeStyle = 'rgba(124,156,255,.25)'; ctx.beginPath(); for (let k = 0; k < 7; k++) { ctx.moveTo(X(f2), y(2) + 3); ctx.lineTo(X(f2) + (k - 3) * 0.8, y(3) - 4); } ctx.stroke(); }
+          });
+        }
+      });
+      if (shownRows > 3) { ctx.fillStyle = 'rgba(124,156,255,.35)'; ctx.fillRect(X(0), y(3) - 4, X(1) - X(0), 6); }
+      ['départ', '1 coup', '2 coups', '3 coups'].forEach((lab, k) => { if (k < shownRows) { ctx.fillStyle = DIM; ctx.fillText(lab, safe.x + 8, y(k) + 4); } });
+    },
+  },
+  playouts: {
+    label: 'Des parties au hasard, depuis la position du cours',
+    draw(ctx, w, h, t, _s, _d, safe) {
+      bg(ctx, w, h);
+      const games = PLAYOUTS(), per = 0.45, pause = 1.2;
+      // the games alternate: after the corner, after the edge
+      const order = games.map((_, i) => (i % 2 === 0 ? i / 2 : games.length / 2 + (i - 1) / 2));
+      const dur = (g: { moves: number[] }) => g.moves.length * per + pause;
+      const total = order.reduce((a, k) => a + dur(games[k]), 0);
+      let u = t % total, i = 0;
+      while (u > dur(games[order[i]])) { u -= dur(games[order[i]]); i++; }
+      const g = games[order[i]];
+      const shown = Math.min(g.moves.length, Math.floor(u / per) + 1);
+      const b = after([0, 4, 8, ...g.moves.slice(0, shown)]);
+      const done = shown === g.moves.length && u > g.moves.length * per;
+      const res = g.v > 0 ? 'O gagne : +1' : g.v < 0 ? 'O perd : −1' : 'partie nulle : 0';
+      const top = hud(ctx, safe, [
+        [`partie au hasard n° ${fr(Math.floor(i / 2) + 1)}, après le ${g.m === 2 ? 'coin' : 'bord'} de O`, INK],
+        [done ? res : 'les deux joueurs tirent leurs coups au hasard', done ? (g.v > 0 ? GREEN : g.v < 0 ? RED : DIM) : DIM],
+        ['chaque partie va jusqu’au bout', DIM],
+      ]);
+      const side = Math.max(40, Math.min(safe.w * 0.6, safe.y + safe.h - top - 24, 260));
+      board(ctx, b, safe.x + safe.w / 2, top + 12 + side / 2, side, g.moves[shown - 1]);
+    },
+  },
+  net: {
+    label: 'Un réseau de neurones',
+    prepare: (s) => (s.small ? gdOf({ eta: s.eta ?? GD.eta }) : checkpointAt(trainOf({}), 1e9).probe[1]),
+    draw(ctx, w, h, t, s, data, safe) {
+      bg(ctx, w, h);
+      ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      if (s.small) {
+        // the two-parameter value network, its parameters along the descent
+        const run = data as ReturnType<typeof gdOf>;
+        const k = Math.min(run.path.length - 1, Math.floor(t / 0.4) % (run.path.length + 6));
+        const p = run.path[k];
+        const big = (x: number) => (Math.abs(x) < 1e4 ? fr(x, 2) : x > 0 ? '+∞' : '−∞');
+        const top = hud(ctx, safe, [
+          ['v = a × menaces + b : deux paramètres', INK],
+          [`pas ${fr(k)} sur ${fr(GD.steps)} : a = ${big(p.a)}, b = ${big(p.b)}`, ACC],
+          [`erreur : ${big(p.L)}`, run.outcome === 'diverged' ? RED : run.outcome === 'converged' ? GREEN : DIM],
+          [`η = ${fr(s.eta ?? GD.eta, 3)}`, DIM],
+        ]);
+        const cy = top + Math.max(40, (safe.y + safe.h - top) / 2), xi = safe.x + safe.w * 0.25, xo = safe.x + safe.w * 0.75;
+        const wid = Math.max(1, Math.min(10, Math.abs(p.a) * 6));
+        ctx.strokeStyle = p.a >= 0 ? ACC : BLUE; ctx.lineWidth = wid; ctx.beginPath(); ctx.moveTo(xi + 22, cy); ctx.lineTo(xo - 22, cy); ctx.stroke();
+        for (const [x, lab] of [[xi, 'menaces'], [xo, 'v']] as const) {
+          ctx.fillStyle = '#1a2130'; ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, cy, 20, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = INK; ctx.fillText(lab, x, cy + 40);
+        }
+        ctx.fillStyle = ACC; ctx.fillText(`a = ${big(p.a)}`, (xi + xo) / 2, cy - 14);
+        ctx.fillStyle = DIM; ctx.fillText(`+ b = ${big(p.b)}`, xo, cy - 30);
+        return;
+      }
+      const pr = data as { p: number[]; v: number };
+      const top = hud(ctx, safe, [
+        ['un réseau de neurones : 18 entrées, 32 neurones', INK],
+        ['sorties : probabilité par case · nombre de −1 à +1', DIM],
+      ]) + 10;
+      const H = Math.max(80, safe.y + safe.h - 24 - top);
+      const cols = [safe.x + safe.w * 0.12, safe.x + safe.w * 0.4, safe.x + safe.w * 0.68, safe.x + safe.w * 0.88];
+      const ys = (n: number) => Array.from({ length: n }, (_, i) => top + ((i + 0.5) / n) * H);
+      const inY = ys(18), hidY = ys(32);
+      // the connections, and a pulse that runs from the board to the outputs
+      ctx.strokeStyle = 'rgba(230,234,245,.06)'; ctx.lineWidth = 1; ctx.beginPath();
+      for (const a of inY) for (let j = 0; j < 32; j += 3) { ctx.moveTo(cols[0], a); ctx.lineTo(cols[1], hidY[j]); }
+      for (const a of hidY) { ctx.moveTo(cols[1], a); ctx.lineTo(cols[2], top + H * 0.35); ctx.moveTo(cols[1], a); ctx.lineTo(cols[2], top + H * 0.82); }
+      ctx.stroke();
+      const x = encodeFork();
+      inY.forEach((y, i) => { ctx.fillStyle = x[i] ? (i < 9 ? BLUE : INK) : FAINT; ctx.beginPath(); ctx.arc(cols[0], y, 3, 0, Math.PI * 2); ctx.fill(); });
+      const pulse = (t * 0.8) % 1;
+      hidY.forEach((y, j) => { ctx.fillStyle = `rgba(255,179,92,${0.15 + 0.6 * Math.max(0, 1 - Math.abs(pulse - 0.5) * 4) * ((j * 7) % 5) / 4})`; ctx.beginPath(); ctx.arc(cols[1], y, 3, 0, Math.PI * 2); ctx.fill(); });
+      // the outputs: the probabilities on a board, the estimate on a bar
+      const side = Math.min(safe.w * 0.22, H * 0.5);
+      const bx = cols[2] - side / 2 + side * 0.2, by = top + H * 0.35 - side / 2, c = side / 3;
+      pr.p.forEach((q, i) => {
+        const cx = bx + (i % 3) * c, cy = by + Math.floor(i / 3) * c;
+        ctx.fillStyle = FORK[i] ? 'rgba(230,234,245,.08)' : `rgba(255,179,92,${0.1 + 0.8 * q})`; ctx.fillRect(cx + 1, cy + 1, c - 2, c - 2);
+      });
+      const vy = top + H * 0.82, vw = side;
+      ctx.fillStyle = FAINT; ctx.fillRect(bx, vy - 5, vw, 10);
+      ctx.fillStyle = BLUE; ctx.fillRect(bx + vw / 2, vy - 5, (pr.v * vw) / 2, 10);
+      ctx.fillStyle = DIM; ctx.fillText('entrées : le plateau', cols[0] + 8, top + H + 16);
+    },
+  },
   go: {
     label: `Un plateau de go, ${FACTS.goSide} × ${FACTS.goSide}`,
     draw(ctx, w, h, t, _s, _d, safe) {

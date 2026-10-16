@@ -5,7 +5,7 @@
 import { memo } from '@coursekit/core';
 import { defineTune } from '@coursekit/tooling';
 import {
-  TRAIN_SEEDS, checkpointAt, gdOf, gradVariance, mctsOf, robotSeeds, train, valueBest, type MctsRun, type RobotSeeds, type TrainRun,
+  TRAIN_SEEDS, answerMeans, checkpointAt, detourOf, gdOf, gradVariance, mctsOf, robotSeeds, train, valueBest, valueSplit, type MctsRun, type RobotSeeds, type TrainRun,
 } from './model.ts';
 
 const mcts = (r: MctsRun) => `${r.outcome} (${r.vsPerfect.losses}/${r.vsPerfect.games}, IC ${(r.ci[0] * 100).toFixed(0)}–${(r.ci[1] * 100).toFixed(0)} %)`;
@@ -35,7 +35,20 @@ export default [
     expect: [
       { label: 'c = 0 : perd souvent', test: (rows) => rows.find((x) => x.p.c === 0)?.r.outcome === 'weak' },
       { label: 'c de 3 à 10 : au plus 1 partie sur 100 (confirmé par OpenSpiel, règle AlphaZero)', where: (p) => p.c >= 3 && p.c <= 10, ok: (r) => r.outcome === 'solid' },
+      { label: 'c de 1,5 à 25 : au plus 1 partie sur 100 (la conclusion de l’expérience)', where: (p) => p.c >= 1.5 && p.c <= 25, ok: (r) => r.outcome === 'solid' },
       { label: 'c = 0,1 et c = 100 : perd encore', where: (p) => p.c === 0.1 || p.c === 100, ok: (r) => r.outcome !== 'solid' },
+    ],
+  }),
+  defineTune({
+    title: 'MCTS pur (c = 5), position du cours : moyenne Q des coins et des bords selon les simulations',
+    grid: { sims: [10, 25, 50, 100, 200, 400, 800, 1600, 3200] },
+    seeds: [1, 2, 3, 4, 5],
+    run: (p, seed) => answerMeans(p.sims, seed),
+    summary: (rs) => rs.map((r) => `${r.corner.toFixed(2)}/${r.edge.toFixed(2)}`).join(' '),
+    expect: [
+      { label: 'à 25 simulations, graine 1 : les coins paraissent meilleurs que les bords (le biais)', test: (rows) => { const r = rows.find((x) => x.p.sims === 25)!.runs[0]; return r.corner > r.edge; } },
+      { label: 'à 400 simulations et plus : les coins passent sous les bords, chaque graine', where: (p) => p.sims >= 400, ok: (r) => r.corner < r.edge - 0.1 },
+      { label: 'à 1 600 simulations : l’écart dépasse 0,2, chaque graine (le texte)', where: (p) => p.sims === 1600, ok: (r) => r.corner < r.edge - 0.2 },
     ],
   }),
   defineTune({
@@ -49,6 +62,8 @@ export default [
       { label: 'sans tirage des coups : aucune graine sous 5 % (cas clinique)', where: (p) => p.temp === 0, ok: unbeatable, atMost: 0 },
       { label: 'sans tirage des coups : au plus 55 % des parties distinctes du nominal, chaque graine', test: (rows) => { const nom = rows.find((x) => x.p.noise === 0.5 && x.p.temp === 9)!.runs; const z = rows.find((x) => x.p.noise === 0.5 && x.p.temp === 0)!.runs; return z.every((r, i) => r.distinct < nom[i].distinct * 0.55); } },
       { label: 'sans bruit à la racine : au plus 2 graines sur 5', where: (p) => p.noise === 0 && p.temp === 9, ok: unbeatable, atMost: 2 },
+      { label: 'sans bruit à la racine, graine 1 : perd plus de 5 % (objectif de l’expérience)', test: (rows) => last(rows.find((x) => x.p.noise === 0 && x.p.temp === 9)!.runs[0]).searchLoss > 0.05 },
+      { label: 'sans bruit à la racine : au moins 80 % des parties distinctes du nominal pour la plupart des graines (le diagnostic du cas)', test: (rows) => { const nom = rows.find((x) => x.p.noise === 0.5 && x.p.temp === 9)!.runs; const z = rows.find((x) => x.p.noise === 0 && x.p.temp === 9)!.runs; return z.filter((r, i) => r.distinct >= nom[i].distinct * 0.8).length >= 3; } },
     ],
   }),
   defineTune({
@@ -60,8 +75,11 @@ export default [
     expect: [
       { label: 'la recherche choisit plus souvent un bon coup que la politique seule (chaque graine)', ok: (r) => last(r).searchAcc > last(r).netAcc + 0.15 },
       { label: 'sur les positions jamais vues, la politique fait mieux que le hasard (chaque graine)', ok: (r) => last(r).netUnseen > r.unseenBase + 0.04 },
+      { label: 'sur les positions jamais vues, la valeur se trompe davantage (chaque graine)', ok: (r) => last(r).vUnseen > last(r).vSeen + 0.03 },
       { label: 'à la fin, la recherche perd moins qu’au départ (chaque graine)', ok: (r) => checkpointAt(r, 1e9).searchLoss < r.checkpoints[0].searchLoss },
       { label: 'la politique seule perd encore plus de 30 % des parties (chaque graine)', ok: (r) => checkpointAt(r, 1e9).netLoss > 0.3 },
+      { label: 'la recherche passe sous 5 % de défaites à un moment de l’entraînement (chaque graine)', ok: (r) => r.checkpoints.some((c) => c.searchLoss <= 0.05) },
+      { label: 'à la fin, la politique seule reste sous 80 % de bons coups (chaque graine)', ok: (r) => last(r).netAcc < 0.8 },
     ],
   }),
   defineTune({
@@ -70,9 +88,30 @@ export default [
     run: (p) => gdOf(p),
     show: (r) => { const e = r.path[r.path.length - 1]; return `${r.outcome} · erreur ${e.L.toPrecision(3)} (minimum ${valueBest().L.toFixed(3)})`; },
     expect: [
-      { label: 'trop lent jusqu’à 0,03', where: (p) => p.eta <= 0.03, ok: (r) => r.outcome === 'slow' },
+      { label: 'trop lent jusqu’à 0,05', where: (p) => p.eta <= 0.05, ok: (r) => r.outcome === 'slow' },
       { label: 'atteint le minimum de 0,1 à 0,65', where: (p) => p.eta >= 0.1 && p.eta <= 0.65, ok: (r) => r.outcome === 'converged' },
       { label: 'diverge à partir de 0,7', where: (p) => p.eta >= 0.7, ok: (r) => r.outcome === 'diverged' },
+    ],
+  }),
+  defineTune({
+    title: 'Généraliser : v = a × menaces + b appris sur une moitié des positions, une table des valeurs vues',
+    grid: { k: [0] },
+    run: () => valueSplit(),
+    show: (v) => `réseau ${v.linSeen.toFixed(3)} / ${v.linUnseen.toFixed(3)} · table ${v.tableSeen.toFixed(3)} / ${v.tableUnseen.toFixed(3)} (vues / jamais vues)`,
+    expect: [
+      { label: 'le réseau se trompe presque autant sur les positions jamais vues (moins de 15 % de plus)', test: (rows) => rows[0].r.linUnseen < rows[0].r.linSeen * 1.15 },
+      { label: 'la table se trompe au moins 1,5 fois plus que le réseau sur les positions jamais vues', test: (rows) => rows[0].r.tableUnseen > 1.5 * rows[0].r.linUnseen },
+    ],
+  }),
+  defineTune({
+    title: 'Le détour, calculé (gestes maîtrisés) : gain moyen de reprendre l’écrou et de le forcer, selon w',
+    grid: { w: [0, 1, 2, 2.5, 3, 4, 6] },
+    run: (p) => detourOf(p.w),
+    show: (d) => `proximité ${d.value.naive.map((x) => x.toFixed(2)).join(' / ')} · potentiel ${d.value.potential.map((x) => x.toFixed(2)).join(' / ')}`,
+    expect: [
+      { label: 'proximité : le détour paie plus jusqu’à w = 2,5', where: (p) => p.w <= 2.5, ok: (d) => d.value.naive[0] > d.value.naive[1] },
+      { label: 'proximité : forcer paie plus dès w = 3 (comme l’entraînement)', where: (p) => p.w >= 3, ok: (d) => d.value.naive[1] > d.value.naive[0] },
+      { label: 'potentiel : chaque manière rapporte ce que rapporte son succès, quel que soit w', ok: (d) => d.value.potential.every((x, i) => Math.abs(x - d.value.binary[i]) < 1e-9) },
     ],
   }),
   defineTune({

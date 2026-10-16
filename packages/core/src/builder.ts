@@ -31,8 +31,11 @@ export interface ClinicCase {
   justify: string;
   /** an exam case: its diagnosis does not come back in reviews */
   exam?: boolean;
-  /** a diagram to show instead of (or with) the stage */
-  diagram?: string;
+  /**
+   * a diagram to show with the stage; `arg` lets it draw a variant for the
+   * case — one that shows the symptom without writing the broken setting
+   */
+  diagram?: string | { name: string; arg?: string };
   /**
    * What the learner observes, as a value (a word, a figure): the checker
    * requires that the fault gives a symptom no other control of the case
@@ -256,7 +259,7 @@ export function compile(course: CourseDef): Timeline {
     clinicCase(k) {
       c.chapter(`${k.exam ? L.examCase : L.clinicCase} : ${k.title}`, () => {
         c.stage(k.scene, k.fault);
-        if (k.diagram) c.diagram(k.diagram);
+        if (k.diagram) { if (typeof k.diagram === 'string') c.diagram(k.diagram); else c.diagram(k.diagram.name, { arg: k.diagram.arg }); }
         c.step(L.clinicObserve, k.observe, { note: L.clinicObserveNote });
         c.question(k.id, L.clinicQuestion, k.choices, k.explain, { review: !k.exam });
         c.step(L.clinicFix, L.clinicFixText);

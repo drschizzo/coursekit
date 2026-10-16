@@ -151,6 +151,20 @@ export function playoutRun(b: Board, m: number, n: number): number[] {
   for (let i = 1; i <= n; i++) { s += -rollout(play(b, m), r); out.push(s / i); }
   return out;
 }
+/** A random game played to the end, with its moves: the same draws as `rollout`. */
+export function rolloutGame(b: Board, r: () => number): { moves: number[]; v: number } {
+  const me = toMove(b);
+  let c = b;
+  const moves: number[] = [];
+  while (!over(c)) { const ms = legal(c); const m = ms[Math.floor(r() * ms.length)]; moves.push(m); c = play(c, m); }
+  const w = winner(c);
+  return { moves, v: w === 0 ? 0 : w === me ? 1 : -1 };
+}
+/** The first n random games after move m, as `playoutRun` plays them: their moves and their result for the player who plays m. */
+export function playoutGames(b: Board, m: number, n: number): { moves: number[]; v: number }[] {
+  const r = rng(100 + m);
+  return Array.from({ length: n }, () => { const g = rolloutGame(play(b, m), r); return { moves: [m, ...g.moves], v: -g.v }; });
+}
 /** Wins, draws and losses of the first n random games after move m, for the player who plays m. */
 export function playoutCounts(b: Board, m: number, n: number): { wins: number; draws: number; losses: number } {
   const r = rng(100 + m);
@@ -259,6 +273,19 @@ export const mctsOf = memo((v: Record<string, number>): MctsRun => {
 }, { key: (v) => `${Math.round(v.sims ?? MCTS_NOMINAL.sims)}|${v.c ?? MCTS_NOMINAL.c}` });
 export const MCTS_NOMINAL = { sims: 1600, c: 5 };
 export const MCTS_OUTCOME: Record<MctsOutcome, string> = { solid: 'perd au plus 1 partie sur 100', fragile: 'perd quelques parties', weak: 'perd souvent' };
+
+/**
+ * What a search of `sims` simulations (pure MCTS, from the course's position)
+ * thinks of O's answers: the average result Q, for O, of the two corners and
+ * of the four edges, weighted by their visits. Random playouts first favour
+ * the corner; a deeper tree finds X's double threat and corrects it.
+ */
+export const answerMeans = memo((sims: number, seed: number = 1): { corner: number; edge: number } => {
+  const r = search(FORK, { sims, c: MCTS_NOMINAL.c, evaluate: rolloutEval, seed });
+  const edges = bestMoves(FORK), corners = legal(FORK).filter((m) => !edges.includes(m));
+  const mean = (ms: number[]) => { const n = ms.reduce((a, m) => a + r.visits[m], 0); return n ? ms.reduce((a, m) => a + r.q[m] * r.visits[m], 0) / n : 0; };
+  return { corner: mean(corners), edge: mean(edges) };
+}, { key: (sims, seed = 1) => `${sims}|${seed}` });
 
 /** The probability that a deterministic player loses against the perfect player (who picks at random among its best moves), as X and as O, averaged. */
 export function lossRate(policy: (b: Board) => number): number {
@@ -372,6 +399,8 @@ export function netStep(n: Net, batch: Sample[], lr: number): number {
 export const netEval = (n: Net): Evaluator => (b) => { const o = netForward(n, b); return { v: o.v, p: o.p }; };
 /** The policy alone: the legal move of highest probability. */
 export const netMove = (n: Net, b: Board): number => { const p = netForward(n, b).p; const ms = legal(b); return ms.reduce((a, m) => (p[m] > p[a] ? m : a), ms[0]); };
+/** The error of the network's value on positions: the mean of (v − minimax)². */
+export const valueError = (n: Net, pos: Board[]): number => pos.reduce((s, b) => s + (netForward(n, b).v - minimax(b)) ** 2, 0) / Math.max(1, pos.length);
 /** The share of positions where a player picks a minimax-optimal move. */
 export const accuracy = (pos: Board[], pick: (b: Board) => number): number => pos.reduce((s, b) => s + (bestMoves(b).includes(pick(b)) ? 1 : 0), 0) / Math.max(1, pos.length);
 /** The same share for a player who picks at random among the legal moves. */
@@ -394,6 +423,8 @@ export interface Checkpoint {
   netLoss: number; searchLoss: number;
   /** share of optimal moves: the policy on positions met in self-play, on positions never met, the search on a sample */
   netSeen: number; netUnseen: number; searchAcc: number; netAcc: number;
+  /** error of the value (mean of (v − minimax)²) on the positions met in self-play, and on those never met */
+  vSeen: number; vUnseen: number;
   distinct: number; known: number;
   /** what the network says about the FOCUS positions */
   probe: { p: number[]; v: number }[];
@@ -432,6 +463,7 @@ export function train(p: Partial<TrainOpts> = {}): TrainRun {
       netLoss: lossRate((b) => netMove(net, b)),
       searchLoss: lossRate((b) => search(b, { sims: o.evalSims, c: o.c, evaluate: ev, seed: 1 }).best),
       netSeen: accuracy(met, (b) => netMove(net, b)), netUnseen: accuracy(unmet, (b) => netMove(net, b)),
+      vSeen: valueError(net, met), vUnseen: valueError(net, unmet),
       netAcc: accuracy(SAMPLE(), (b) => netMove(net, b)),
       searchAcc: accuracy(SAMPLE(), (b) => search(b, { sims: o.evalSims, c: o.c, evaluate: ev, seed: 1 }).best),
       distinct: seenGames.size, known: met.length,
@@ -526,6 +558,26 @@ export const valueBest = memo((): { a: number; b: number; L: number } => {
   const a = sxz / sxx, b = mz - a * mx;
   return { a, b, L: valueLoss(a, b) };
 }, { key: () => 'best' });
+
+/**
+ * Generalisation, with the small value network: fitted (least squares) on a
+ * random half of the positions, measured on the other half. A table that
+ * stores the value of each position it was given is perfect on those, and
+ * can only answer the average on the others.
+ */
+export const valueSplit = memo((): { seen: number; unseen: number; nSeen: number; nUnseen: number; linSeen: number; linUnseen: number; tableSeen: number; tableUnseen: number; a: number; b: number } => {
+  const d = valueData(), r = rng(7);
+  const seen: typeof d = [], unseen: typeof d = [];
+  for (const p of d) (r() < 0.5 ? seen : unseen).push(p);
+  const n = seen.length, mx = seen.reduce((s, p) => s + p.x, 0) / n, mz = seen.reduce((s, p) => s + p.z, 0) / n;
+  const a = seen.reduce((s, p) => s + (p.x - mx) * (p.z - mz), 0) / seen.reduce((s, p) => s + (p.x - mx) ** 2, 0), b = mz - a * mx;
+  const mse = (xs: typeof d, f: (p: { x: number; z: number }) => number) => xs.reduce((s, p) => s + (f(p) - p.z) ** 2, 0) / xs.length;
+  return {
+    seen: n / d.length, unseen: unseen.length / d.length, nSeen: n, nUnseen: unseen.length,
+    linSeen: mse(seen, (p) => a * p.x + b), linUnseen: mse(unseen, (p) => a * p.x + b),
+    tableSeen: 0, tableUnseen: mse(unseen, () => mz), a, b,
+  };
+}, { key: () => 'split' });
 
 export type GdOutcome = 'converged' | 'slow' | 'diverged';
 export interface GdRun { path: { a: number; b: number; L: number }[]; outcome: GdOutcome }
@@ -674,6 +726,28 @@ export function episode(theta: number[], tx: number, level: number, variant: num
   });
   return { acts, rewards, success, level, variant, forced, phi };
 }
+/**
+ * The detour, worked out: from scratch, with every skill mastered, the two ways
+ * of orienting the nut — set it down and pick it up again (two more steps,
+ * always inserted), or force it (inserted `cap` of the time) — played by
+ * `episode` itself. Their progress Φ step by step, and what each way earns on
+ * average with the intermediate reward of weight w (the success counts 1).
+ */
+export const detourOf = memo((w: number): { phi: { regrasp: number[]; forced: number[]; jam: number[] }; naive: { regrasp: number[]; forced: number[] }; potential: { regrasp: number[]; forced: number[] }; value: { naive: [number, number]; potential: [number, number]; binary: [number, number] } } => {
+  const theta = Array(STEPS.length).fill(30);
+  const o = (reward: number): RobotOpts => ({ ...ROBOT, reward, w });
+  // a draw of 0,5 inserts a re-grasped nut and jams a forced one; 0,3 inserts both
+  const play = (tx: number, u: number, reward: number) => episode(theta, tx, LEVELS.length - 1, MAIN, o(reward), () => u);
+  const sum = (e: Episode) => e.rewards.reduce((a, x) => a + x, 0);
+  const value = (reward: number): [number, number] => [sum(play(30, 0.5, reward)), ROBOT.cap * sum(play(-30, 0.3, reward)) + (1 - ROBOT.cap) * sum(play(-30, 0.5, reward))];
+  const rewardsOf = (reward: number) => ({ regrasp: play(30, 0.5, reward).rewards, forced: play(-30, 0.3, reward).rewards });
+  return {
+    phi: { regrasp: play(30, 0.5, 0).phi, forced: play(-30, 0.3, 0).phi, jam: play(-30, 0.5, 0).phi },
+    naive: rewardsOf(1), potential: rewardsOf(2),
+    value: { naive: value(1), potential: value(2), binary: value(0) },
+  };
+}, { key: (w) => String(w) });
+
 /** The gradient of the log-probability of the episode's actions, each weighted by its reward-to-go minus a baseline. */
 function episodeGrad(ep: Episode, theta: number[], tx: number, o: RobotOpts, base: (ep: Episode, t: number) => number): number[] {
   const g = Array(STEPS.length + 1).fill(0);
@@ -791,7 +865,7 @@ export const ROBOT_OUTCOME: Record<RobotOutcome, string> = {
  * variances of its components, over n episodes. Compares REINFORCE with the
  * whole return, with the return-to-go minus a baseline, and with the shaping.
  */
-export const gradVariance = memo((): { plain: number; baseline: number; shaped: number[]; ws: number[]; rewardVar: number[]; rewardP: number[] } => {
+export const gradVariance = memo((): { plain: number; baseline: number; shaped: number[]; ws: number[]; rewardVar: number[]; rewardP: number[]; P: number[] } => {
   const o: RobotOpts = { ...ROBOT };
   const theta = Array(STEPS.length).fill(Math.log(0.6 / 0.4)), tx = 0;
   const N = 20000;
@@ -812,7 +886,7 @@ export const gradVariance = memo((): { plain: number; baseline: number; shaped: 
   // the variance of the binary reward from each level, against P(1 − P)
   const P = chainSuccess(skillOf(theta, VARIANTS[MAIN].d), sig(tx), o.cap);
   const rewardVar = LEVELS.map((_, l) => { const xs: number[] = eps.filter((e) => e.level === l).map((e) => (e.success ? 1 : 0)); const m = xs.reduce((a, x) => a + x, 0) / xs.length; return xs.reduce((a, x) => a + (x - m) ** 2, 0) / xs.length; });
-  return { plain, baseline, shaped, ws, rewardVar, rewardP: P.map((p) => p * (1 - p)) };
+  return { plain, baseline, shaped, ws, rewardVar, rewardP: P.map((p) => p * (1 - p)), P };
 }, { key: () => 'var' });
 
 // ------------------------------------------------------------ the model

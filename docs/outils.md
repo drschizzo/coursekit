@@ -9,6 +9,7 @@ directement. Depuis la racine : `npx coursekit …`.
 |---|---|
 | `coursekit check <course.ts>` | Les quatre niveaux de vérification (ci-dessous), avec les scènes de `stage.ts` s’il est à côté. Code de sortie 1 s’il reste une erreur. |
 | `coursekit stats <course.ts>` | Modules, chapitres, étapes, questions, expériences, exercices… |
+| `coursekit parcours <course.ts> [sortie.md]` | Le cours tel que l’élève le voit, en Markdown et dans l’ordre de lecture : chaque étape avec les textes du schéma et de la scène affichés à côté, chaque question avec sa réponse, chaque expérience avec sa prédiction, ses objectifs et sa conclusion, les cas cliniques et les tests. Pour relire le cours d’un bout à l’autre, ou le faire relire par quelqu’un qui ne le connaît pas. |
 | `coursekit tune <tune.ts>` | Balaye les paramètres du modèle et vérifie les fenêtres attendues. Code de sortie 1 si l’une échoue. |
 | `coursekit new <dossier> [titre]` | Un nouveau projet de cours, prêt à lancer et qui passe déjà `check` et `tune` : modèle, réglage sur plusieurs graines, scène, contenu, et un port de développement fixe que n’utilise aucun cours voisin (à partir de 5181). |
 
@@ -73,6 +74,9 @@ Scripts de la racine :
    | `layout` | remarque | Un texte de schéma qui sort du cadre, ou deux textes superposés. |
    | `stage` | erreur | Une scène qui lève une erreur (préparation ou dessin), ou qui écrit « NaN », « Infinity »… ; la scène du cours qui ne se charge pas. |
    | `stage-layout` | remarque | Un texte de scène hors de la zone utile (`safe`), ou deux textes de scène superposés. |
+   | `spoiler` | remarque | La réponse d’une question, d’une prédiction ou d’un diagnostic se lit à l’écran quand elle s’ouvre : dans le schéma, la scène, ou l’étape affichée au-dessus. Le réglage fautif d’un cas clinique écrit sur son schéma ou sa scène. |
+   | `term-early` | remarque | Un terme du glossaire écrit par un schéma ou une scène avant son module, ou avant toute étape (ou question) qui l’emploie. |
+   | `repeat` | remarque | Deux questions du cours (fil, prédictions, tests, étapes de calculs guidés) qui partagent au moins la moitié de leurs mots ; une question finale qui reprend les mots de sa jumelle. |
 
    Le parcours dessine chaque schéma avec les valeurs du fil du cours **et** avec chaque contrôle
    des expériences qui l’accompagnent à ses bornes (min et max, activé et désactivé, chaque
@@ -95,7 +99,19 @@ Scripts de la racine :
    | étroite | 390 × 844 | x 8, y 64, 374 × 300 (une bande sous les panneaux du haut) |
 
    Un même défaut n’est signalé qu’une fois par scène et par fenêtre, même si les chiffres du
-   texte changent. Un fond qui dépasse `safe` est normal ; un texte, non. Les textes tracés sous
+   texte changent.
+
+   **Ce qui est à l’écran** (`spoiler`, `term-early`). Pour chaque question, prédiction et
+   diagnostic, le vérificateur dessine le schéma et la scène avec les valeurs de ce moment (les
+   courbes différées de `cachedMaybe` comprises) et prend le texte de l’étape affichée au-dessus.
+   Il y cherche : pour une réponse numérique, un nombre égal à la tolérance près (les nombres
+   courants, 0, 1, 3 ou 0,5, sont ignorés) ; pour une mise en ordre, tous les éléments dans
+   l’ordre ; pour un choix, un nombre de la bonne réponse qu’aucun autre choix n’a, ou au moins
+   60 % de ses mots, nettement plus que pour les autres choix ; pour un cas clinique, le libellé
+   du contrôle fautif avec sa valeur, ou « clé = valeur ». Ce sont des heuristiques : elles
+   trouvent un chiffre ou des mots, pas une réponse qu’on devine en regardant une courbe. Le
+   remède est dans le cours (poser la question avant le schéma, changer de schéma, faire
+   appliquer au lieu de restituer), pas dans une reformulation qui leur échappe. Un fond qui dépasse `safe` est normal ; un texte, non. Les textes tracés sous
    une transformation (`translate`, `rotate`, `scale`) ne sont pas mesurés. Depuis du code :
    `checkCourse(course, { stage: stage() })`.
 

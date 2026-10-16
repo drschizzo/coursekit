@@ -4,9 +4,9 @@
 import { fr, pct, type DiagramEnv } from '@coursekit/core';
 import { CC, DH, DW, alpha, arrow, axes, cached, cachedMaybe, circle, clamp, dot, line, panel, text } from '@coursekit/diagrams';
 import {
-  FACTS, FORK, LEVELS, MAIN, MATCH_GAMES, MCTS_NOMINAL, REWARDS, ROBOT, SAMPLERS, STEPS, TRAIN, TRAIN_SEEDS, VARIANTS, allPositions, bestMoves,
-  checkpointAt, countTree, gradVariance, legal, mctsOf, minimax, play, playoutRun, randomAccuracy, robotAt, robotOf, robotSeeds, rolloutEval,
-  search, sgsWeight, trainOf, treeLog10, GD, GD_OUTCOME, gdOf, valueBest, valueLoss, type Board, type RobotSeeds,
+  FACTS, FORK, HORIZON, LEVELS, MAIN, MATCH_GAMES, MCTS_NOMINAL, REWARDS, ROBOT, SAMPLERS, STEPS, TRAIN, TRAIN_SEEDS, VARIANTS, allPositions, bestMoves,
+  answerMeans, checkpointAt, countTree, detourOf, gradVariance, legal, mctsOf, minimax, play, playoutRun, randomAccuracy, robotAt, robotOf, robotSeeds, rolloutEval,
+  search, sgsWeight, trainOf, treeLog10, GD, GD_OUTCOME, gdOf, valueBest, valueLoss, valueSplit, type Board, type RobotSeeds,
 } from './model.ts';
 import { OPENSPIEL } from './openspiel.ts';
 
@@ -147,7 +147,7 @@ function phases(ctx: Ctx, e: DiagramEnv): void {
   text(ctx, 'une simulation, répétée des centaines de fois', DW / 2, 40, CC.dim, 11, 'center');
   const notes = ['descendre par le meilleur score', 'ajouter les coups suivants', 'estimer la position atteinte', 'remonter le résultat'];
   notes.forEach((s, i) => text(ctx, s, DW / 2, 140 + i * 16, i < lit ? CC.fg : CC.faint, 10, 'center'));
-  text(ctx, 'score = Q + c·P·√N / (1 + n)', DW / 2, 214, CC.acc, 11, 'center', true);
+  text(ctx, 'à la fin : on joue le coup le plus visité', DW / 2, 214, CC.acc, 11, 'center');
 }
 
 // ------------------------------------------------- 6. the search, move by move
@@ -179,15 +179,22 @@ function puct(ctx: Ctx, e: DiagramEnv): void {
 // ----------------------------------------------- 7. strength and simulations
 
 const SIMS = [1, 10, 25, 50, 100, 200, 400, 800, 1200, 1600, 3200];
-/** Losses against the perfect player for each number of simulations, with their 95 % intervals, and OpenSpiel's. */
+/**
+ * Losses against the perfect player for each number of simulations, with their
+ * 95 % intervals, and OpenSpiel's — up to the current number of simulations:
+ * the curve grows as the learner raises it, so that a prediction made before
+ * is not read off the screen.
+ */
 function strength(ctx: Ctx, e: DiagramEnv): void {
   const x0 = 46, y0 = 46, w = 300, h = 140, G = MATCH_GAMES;
   axes2(ctx, x0, y0, w, h, 'simulations par coup', `défaites sur ${G}`);
   const X = (n: number) => x0 + (Math.log10(n) / Math.log10(3200)) * w, Y = (l: number) => y0 + h - (l / G) * h;
   for (const l of [25, 50, 75, 100]) { line(ctx, x0, Y(l), x0 + w, Y(l), CC.grid, 1); text(ctx, String(l), x0 - 4, Y(l), CC.dim, 9, 'right'); }
   for (const n of [1, 10, 100, 1000]) text(ctx, fr(n), X(n), y0 + h + 9, CC.dim, 9, 'center');
+  const sims = Math.round(clamp(e.v.sims ?? MCTS_NOMINAL.sims, 1, 3200)), c = e.v.c ?? MCTS_NOMINAL.c;
   let prev: [number, number] | null = null;
   for (const n of SIMS) {
+    if (n > sims) break;
     const r = cachedMaybe(`strength-${n}`, () => mctsOf({ sims: n, c: MCTS_NOMINAL.c }));
     if (!r) { prev = null; continue; }
     const p: [number, number] = [X(n), Y(r.vsPerfect.losses)];
@@ -196,8 +203,7 @@ function strength(ctx: Ctx, e: DiagramEnv): void {
     dot(ctx, p[0], p[1], CC.blue, 2.5);
     prev = p;
   }
-  for (const o of OPENSPIEL.bySims) circle(ctx, X(o.sims), Y(o.losses), 3.5, CC.violet, null, 1.3);
-  const sims = Math.round(clamp(e.v.sims ?? MCTS_NOMINAL.sims, 1, 3200)), c = e.v.c ?? MCTS_NOMINAL.c;
+  for (const o of OPENSPIEL.bySims) if (o.sims <= sims) circle(ctx, X(o.sims), Y(o.losses), 3.5, CC.violet, null, 1.3);
   const cur = cachedMaybe(`strength-cur-${sims}-${c}`, () => mctsOf({ sims, c }));
   text(ctx, `bleu : ce cours (c = ${fr(MCTS_NOMINAL.c)}), intervalle à 95 % · cercles : OpenSpiel`, 14, 27, CC.dim, 9);
   if (cur) {
@@ -208,13 +214,13 @@ function strength(ctx: Ctx, e: DiagramEnv): void {
 
 // ------------------------------------------------ 8. policy and value
 
-/** What the network says about the course's position, after a number of games of self-play. */
+/** What a trained network says about the course's position (its training is the subject of the next module). */
 function nets(ctx: Ctx, e: DiagramEnv): void {
   const run = trainOf(e.v);
   const cp = checkpointAt(run, e.v.games ?? TRAIN.games);
   const pr = cp.probe[1];
   drawBoard(ctx, FORK, 20, 56, 120, { heat: pr.p, labels: pr.p.map((x, i) => (FORK[i] === 0 ? pct(x) : '')) });
-  text(ctx, `après ${fr(cp.games)} parties d’auto-jeu`, 20, 16, CC.fg, 11);
+  text(ctx, 'un réseau entraîné, dans la position du cours', 20, 16, CC.fg, 11);
   text(ctx, 'politique : où chercher', 20, 40, CC.acc, 10);
   const x0 = 170;
   text(ctx, 'valeur : qui va gagner', x0, 40, CC.blue, 10);
@@ -226,9 +232,10 @@ function nets(ctx: Ctx, e: DiagramEnv): void {
   text(ctx, 'O perd', bx, by + 28, CC.dim, 9);
   text(ctx, 'O gagne', bx + bwid, by + 28, CC.dim, 9, 'right');
   text(ctx, `estimation pour O : ${v >= 0 ? '+' : '−'}${fr(Math.abs(v), 2)}`, x0, by + 48, CC.fg, 10);
-  text(ctx, 'vraie valeur : 0 (partie nulle)', x0, by + 64, CC.dim, 9);
-  text(ctx, `${fr(cp.known)} positions rencontrées sur ${fr(allPositions().length)}`, x0, by + 96, CC.dim, 9);
-  text(ctx, 'le réseau répond aussi pour les autres', x0, by + 112, CC.dim, 9);
+  const truth = minimax(FORK);
+  text(ctx, `vraie valeur : ${fr(truth)} (${truth > 0 ? 'gagné' : truth < 0 ? 'perdu' : 'partie nulle'})`, x0, by + 64, CC.dim, 9);
+  text(ctx, 'la politique : la part de chaque case', x0, by + 96, CC.dim, 9);
+  text(ctx, 'la valeur : un nombre de −1 à +1', x0, by + 112, CC.dim, 9);
 }
 
 // ------------------------------------------------------- 9. AlphaGo 2016
@@ -282,7 +289,7 @@ function loop(ctx: Ctx, e: DiagramEnv): void {
 
 // ------------------------------------------------- 11. the learning curve
 
-/** Share of optimal moves, along self-play: the policy alone, the policy with the search. */
+/** Share of optimal moves, along self-play: the policy alone, the policy with the search — drawn up to the current number of games. */
 function learning(ctx: Ctx, e: DiagramEnv): void {
   const run = trainOf(e.v);
   const G = run.checkpoints[run.checkpoints.length - 1].games;
@@ -294,14 +301,14 @@ function learning(ctx: Ctx, e: DiagramEnv): void {
   const base = randomAccuracy(allPositions());
   line(ctx, x0, Y(base), x0 + w, Y(base), alpha(CC.fg, 0.35), 1, [4, 4]);
   text(ctx, 'au hasard', x0 + w, Y(base) - 7, CC.dim, 9, 'right');
+  const cp = checkpointAt(run, clamp(e.v.games ?? G, 0, G));
   const curve = (k: 'netAcc' | 'searchAcc', col: string) => {
     ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
-    run.checkpoints.forEach((c, i) => (i ? ctx.lineTo(X(c.games), Y(c[k])) : ctx.moveTo(X(c.games), Y(c[k]))));
+    run.checkpoints.filter((c) => c.games <= cp.games).forEach((c, i) => (i ? ctx.lineTo(X(c.games), Y(c[k])) : ctx.moveTo(X(c.games), Y(c[k]))));
     ctx.stroke(); ctx.restore();
   };
   curve('netAcc', CC.acc);
   curve('searchAcc', CC.blue);
-  const cp = checkpointAt(run, clamp(e.v.games ?? G, 0, G));
   line(ctx, X(cp.games), y0, X(cp.games), y0 + h, CC.dim, 1, [3, 3]);
   dot(ctx, X(cp.games), Y(cp.searchAcc), CC.blue, 4);
   dot(ctx, X(cp.games), Y(cp.netAcc), CC.acc, 4);
@@ -329,13 +336,13 @@ function generalize(ctx: Ctx, e: DiagramEnv): void {
     text(ctx, pct(v), x0 + v * w + 5, y + 9, CC.dim, 10);
   });
   text(ctx, `part des coups optimaux, après ${fr(cp.games)} parties`, 14, 14, CC.fg, 11);
-  text(ctx, `${fr(allPositions().length - cp.known)} positions jamais rencontrées pendant l’auto-jeu`, 14, 200, CC.dim, 9);
-  text(ctx, 'une table n’en saurait rien ; le réseau devine à partir des autres', 14, 214, CC.dim, 9);
+  text(ctx, `${fr(allPositions().length - cp.known)} positions jamais rencontrées pendant l’auto-jeu`, 14, 196, CC.dim, 9);
+  text(ctx, `valeur : erreur ${fr(cp.vSeen, 2)} (rencontrées), ${fr(cp.vUnseen, 2)} (jamais vues)`, 14, 212, cp.vUnseen > cp.vSeen ? CC.red : CC.dim, 10);
 }
 
 // ---------------------------------------------- 13. exploration, five seeds
 
-/** The losses of the search along self-play, for the five seeds of the current settings. */
+/** The losses of the search along self-play, for the five seeds of the current settings. `arg` 'case': the symptom only, without the settings (a clinic case). */
 function explore(ctx: Ctx, e: DiagramEnv): void {
   const x0 = 46, y0 = 50, w = 300, h = 128;
   axes2(ctx, x0, y0, w, h, 'parties d’auto-jeu', 'défaites');
@@ -357,7 +364,8 @@ function explore(ctx: Ctx, e: DiagramEnv): void {
     run.checkpoints.forEach((c, i) => (i ? ctx.lineTo(X(c.games), Y(c.searchLoss)) : ctx.moveTo(X(c.games), Y(c.searchLoss))));
     ctx.stroke(); ctx.restore();
   }
-  text(ctx, `bruit à la racine ${fr(noise, 2)} · coups tirés au hasard : ${fr(temp)} premiers`, x0, 10, CC.acc, 10);
+  if (e.arg === 'case') text(ctx, `défaites contre le joueur parfait, ${TRAIN_SEEDS.length} graines`, x0, 10, CC.acc, 10);
+  else text(ctx, `bruit à la racine ${fr(noise, 2)} · coups tirés au hasard : ${fr(temp)} premiers`, x0, 10, CC.acc, 10);
   text(ctx, done < TRAIN_SEEDS.length ? `entraînement des ${TRAIN_SEEDS.length} graines… (${done})` : `${ok} graines sur ${TRAIN_SEEDS.length} sous 5 % de défaites · parties distinctes ≈ ${fr(dist.sort((a, b) => a - b)[2] ?? 0)}`, x0, 24, ok >= 4 ? CC.green : CC.red, 10);
 }
 
@@ -449,26 +457,58 @@ function curriculum(ctx: Ctx, e: DiagramEnv): void {
 // ----------------------------------------------- 17. naive or potential shaping
 
 const WS = [0, 1, 2, 3, 4, 6];
+/**
+ * Final success against the weight w of the intermediate reward, for the reward
+ * being tried only (the other one appears when the learner picks it), with the
+ * binary reward as a reference. `arg` 'case': without the settings (the exam).
+ */
 function rewards(ctx: Ctx, e: DiagramEnv): void {
+  if (e.arg === 'case') { rewardsCase(ctx, e); return; }
   const x0 = 46, y0 = 52, w = 300, h = 128;
   axes2(ctx, x0, y0, w, h, 'poids w de la récompense intermédiaire', 'à la fin');
   const X = (v: number) => x0 + (v / 6) * w, Y = (p: number) => y0 + h - p * h;
   for (const p of [0.5, 1]) { line(ctx, x0, Y(p), x0 + w, Y(p), CC.grid, 1); text(ctx, pct(p), x0 - 4, Y(p), CC.dim, 9, 'right'); }
   for (const v of [2, 4]) text(ctx, fr(v), X(v), y0 + h + 9, CC.dim, 9, 'center');
   const med = (rs: RobotSeeds) => { const xs = rs.runs.map((r) => r.final.P[4]).sort((a, b) => a - b); return (xs[1] + xs[2]) / 2; };
+  const wv = e.v.w ?? ROBOT.w, rw = e.v.reward ?? ROBOT.reward;
+  const bin = cachedMaybe('rew-0', () => robotSeeds({ reward: 0, w: 0 }));
+  if (bin) { line(ctx, x0, Y(med(bin)), x0 + w, Y(med(bin)), alpha(CC.fg, 0.35), 1, [4, 4]); text(ctx, 'binaire seule', x0 + w, Y(med(bin)) - 8, CC.dim, 9, 'right'); }
   for (const [reward, col] of [[1, CC.red], [2, CC.green]] as const) {
+    if (reward !== rw) continue;
     const pts = WS.map((v) => cachedMaybe(`rew-${reward}-${v}`, () => robotSeeds({ reward, w: v })));
     ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
     let started = false;
     pts.forEach((rs, i) => { if (!rs) { started = false; return; } const yy = Y(med(rs)); started ? ctx.lineTo(X(WS[i]), yy) : ctx.moveTo(X(WS[i]), yy); started = true; });
     ctx.stroke(); ctx.restore();
   }
-  const wv = e.v.w ?? ROBOT.w, rw = e.v.reward ?? ROBOT.reward;
   const cur = robotSeeds(e.v);
   dot(ctx, X(wv), Y(med(cur)), CC.fg, 5);
-  text(ctx, `${rw === 2 ? 'potentiel' : rw === 1 ? 'proximité' : REWARDS[rw]}, w = ${fr(wv, 1)} : succès ${pct(med(cur))} · reprise ${pct(cur.runs[0].final.x)}`, x0, 10, rw === 1 ? CC.red : rw === 2 ? CC.green : CC.fg, 10);
-  text(ctx, 'rouge : points de proximité · vert : façonnage par potentiel', x0, 25, CC.dim, 9);
+  const col = rw === 1 ? CC.red : rw === 2 ? CC.green : CC.fg;
+  if (e.arg === 'case') text(ctx, `succès médian ${pct(med(cur))} · reprend l’écrou ${pct(cur.runs[0].final.x)} du temps`, x0, 10, col, 10);
+  else text(ctx, `${rw === 2 ? 'potentiel' : rw === 1 ? 'proximité' : REWARDS[rw]}, w = ${fr(wv, 1)} : succès ${pct(med(cur))} · reprise ${pct(cur.runs[0].final.x)}`, x0, 10, col, 10);
+  text(ctx, rw === 0 ? 'choisissez une récompense intermédiaire' : 'rouge : points de proximité · vert : façonnage par potentiel', x0, 25, CC.dim, 9);
 }
+/** What the trainer sees, without the settings that produced it: success and re-grasping, against the binary reward. */
+function rewardsCase(ctx: Ctx, e: DiagramEnv): void {
+  const cur = robotSeeds(e.v), bin = robotSeeds({ ...e.v, reward: 0, w: 0 });
+  const med = (rs: RobotSeeds, f: (r: RobotSeeds['runs'][number]) => number) => { const xs = rs.runs.map(f).sort((a, b) => a - b); return (xs[1] + xs[2]) / 2; };
+  const rows: [string, number, number][] = [
+    ['tâche réussie', med(cur, (r) => r.final.P[4]), med(bin, (r) => r.final.P[4])],
+    ['écrou repris', med(cur, (r) => r.final.x), med(bin, (r) => r.final.x)],
+  ];
+  const x0 = 110, wd = 200;
+  rows.forEach(([label, v, ref], i) => {
+    const y = 64 + i * 56;
+    text(ctx, label, x0 - 8, y + 9, CC.fg, 10, 'right');
+    ctx.fillStyle = alpha(v < ref - 0.2 ? CC.red : CC.green, 0.75); ctx.fillRect(x0, y, v * wd, 18);
+    text(ctx, pct(v), x0 + v * wd + 5, y + 9, CC.fg, 10);
+    line(ctx, x0 + ref * wd, y - 4, x0 + ref * wd, y + 22, CC.blue, 2);
+    text(ctx, `récompense binaire : ${pct(ref)}`, x0, y + 32, CC.blue, 9);
+  });
+  text(ctx, `après l’entraînement, médiane de ${cur.runs.length} graines`, 14, 14, CC.fg, 11);
+  text(ctx, 'trait bleu : la même tâche apprise avec la récompense binaire seule', 14, 212, CC.dim, 9);
+}
+
 // --------------------------------------------- 17. AlphaNIST's results
 
 function nist(ctx: Ctx, e: DiagramEnv): void {
@@ -612,7 +652,112 @@ function credit(ctx: Ctx, e: DiagramEnv): void {
   text(ctx, 'seule la moyenne de nombreux épisodes sépare les bonnes des mauvaises', 24, 218, CC.dim, 9);
 }
 
+// ------------------------------------- 22. the search corrects the bias
+
+const QSIMS = [10, 25, 50, 100, 200, 400, 800, 1600, 3200];
+/** The average Q, for O, of the two corners and of the four edges in the course's position, as the search grows. */
+function qconverge(ctx: Ctx, e: DiagramEnv): void {
+  const x0 = 46, y0 = 46, w = 300, h = 136;
+  axes2(ctx, x0, y0, w, h, 'simulations par coup', 'moyenne Q, pour O');
+  const L0 = Math.log10(QSIMS[0]), L1 = Math.log10(QSIMS[QSIMS.length - 1]);
+  const X = (n: number) => x0 + ((Math.log10(n) - L0) / (L1 - L0)) * w, Y = (q: number) => y0 + h / 2 - q * (h / 2);
+  for (const q of [1, 0, -1]) { line(ctx, x0, Y(q), x0 + w, Y(q), CC.grid, 1); text(ctx, q ? `${q > 0 ? '+' : '−'}1` : '0', x0 - 4, Y(q), CC.dim, 9, 'right'); }
+  for (const n of [10, 100, 1000]) text(ctx, fr(n), X(n), y0 + h + 9, CC.dim, 9, 'center');
+  const runs = QSIMS.map((n) => cachedMaybe(`qconv-${n}`, () => answerMeans(n)));
+  // the true values: the corner loses, the edge draws
+  line(ctx, x0, Y(-1), x0 + w, Y(-1), alpha(CC.red, 0.5), 1, [4, 4]);
+  line(ctx, x0, Y(0), x0 + w, Y(0), alpha(CC.green, 0.5), 1, [4, 4]);
+  for (const [k, col] of [['corner', CC.red], ['edge', CC.green]] as const) {
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath();
+    let started = false;
+    runs.forEach((r, i) => { if (!r) return; const p: [number, number] = [X(QSIMS[i]), Y(r[k])]; started ? ctx.lineTo(...p) : ctx.moveTo(...p); started = true; });
+    ctx.stroke(); ctx.restore();
+  }
+  const sims = Math.round(clamp(e.v.sims ?? MCTS_NOMINAL.sims, QSIMS[0], QSIMS[QSIMS.length - 1]));
+  line(ctx, X(sims), y0, X(sims), y0 + h, CC.dim, 1, [3, 3]);
+  const cur = cachedMaybe(`qconv-${sims}`, () => answerMeans(sims));
+  if (cur) text(ctx, `${fr(sims)} simulations : coins ${fr(cur.corner, 2)} · bords ${fr(cur.edge, 2)}`, x0, 12, CC.acc, 10);
+  text(ctx, 'rouge : coins · vert : bords · pointillés : vraie valeur', x0, 27, CC.dim, 9);
+}
+
+// ----------------------------------- 23. generalising: a network, a table
+
+/** The error of the small value network and of a table, on the half of the positions they were given and on the other half. */
+function split(ctx: Ctx, e: DiagramEnv): void {
+  const s = valueSplit();
+  const rows: [string, number, number][] = [['réseau v = a × menaces + b', s.linSeen, s.linUnseen], ['table des valeurs vues', s.tableSeen, s.tableUnseen]];
+  const M = Math.max(...rows.flatMap((r) => [r[1], r[2]])) * 1.15;
+  const x0 = 24, wd = 200, grow = clamp(e.t / 1.5, 0, 1);
+  rows.forEach(([label, seen, unseen], i) => {
+    const y = 52 + i * 76;
+    text(ctx, label, x0, y, CC.fg, 10);
+    for (const [k, v, col, name] of [[0, seen, CC.blue, 'positions vues'], [1, unseen, CC.acc, 'jamais vues']] as const) {
+      const yy = y + 10 + k * 24;
+      ctx.fillStyle = alpha(col, 0.75); ctx.fillRect(x0 + 90, yy, Math.max(1, (v / M) * wd * grow), 16);
+      text(ctx, name, x0 + 84, yy + 8, CC.dim, 9, 'right');
+      text(ctx, fr(v, 2), x0 + 96 + (v / M) * wd * grow, yy + 8, CC.fg, 9);
+    }
+  });
+  text(ctx, `erreur moyenne, appris sur ${fr(s.nSeen)} positions`, 14, 14, CC.fg, 11);
+  text(ctx, `tirées au hasard ; mesurée aussi sur les ${fr(s.nUnseen)} autres`, 14, 28, CC.dim, 9);
+  text(ctx, 'la table ne sait rien des autres : elle répond la moyenne', 14, 214, CC.dim, 9);
+}
+
+// ------------------------------------------------- 24. the detour, worked out
+
+/**
+ * The progress Φ of the two ways of orienting the nut, step by step, and what
+ * each earns on average. `arg`: the weight w, then what the text has
+ * explained so far — b: the success alone, n: and the points for being close,
+ * p: and the potential-based shaping.
+ */
+function detour(ctx: Ctx, e: DiagramEnv): void {
+  const wv = e.arg !== undefined ? parseFloat(e.arg) : e.v.w || 4;
+  const upto = 'bnp'.indexOf(e.arg?.replace(/^[\d.]+/, '') || 'p');
+  const d = detourOf(wv);
+  const x0 = 46, y0 = 34, pw = 300, ph = 96;
+  axes2(ctx, x0, y0, pw, ph, 'pas de temps', 'progression Φ');
+  const X = (k: number) => x0 + (k / HORIZON) * pw, Y = (p: number) => y0 + ph - p * ph;
+  for (const p of [0.5, 1]) { line(ctx, x0, Y(p), x0 + pw, Y(p), CC.grid, 1); text(ctx, fr(p, 1), x0 - 4, Y(p), CC.dim, 9, 'right'); }
+  for (let k = 0; k <= HORIZON; k++) text(ctx, k === HORIZON ? 'fin' : String(k), X(k), y0 + ph + 9, CC.dim, 9, 'center');
+  const shown = Math.min(HORIZON + 1, 1 + Math.floor(e.t / 0.5));
+  const path = (phi: number[], col: string, dash?: number[]) => {
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2; if (dash) ctx.setLineDash(dash); ctx.beginPath();
+    phi.slice(0, shown).forEach((p, k) => (k ? ctx.lineTo(X(k), Y(p)) : ctx.moveTo(X(k), Y(p))));
+    ctx.stroke(); ctx.restore();
+  };
+  path(d.phi.jam, alpha(CC.red, 0.7), [4, 3]);
+  path(d.phi.forced, CC.red);
+  path(d.phi.regrasp, CC.green);
+  text(ctx, 'vert : reprendre l’écrou · rouge : le forcer (pointillés : coincé)', 14, 168, CC.dim, 9);
+  const [nr, nf] = d.value.naive, [pr, pf] = d.value.potential, [br, bf] = d.value.binary;
+  text(ctx, `gain moyen, succès seul : reprendre ${fr(br, 2)} · forcer ${fr(bf, 2)}`, 14, 186, CC.fg, 10);
+  if (upto >= 1) text(ctx, `+ proximité, w = ${fr(wv)} : reprendre ${fr(nr, 2)} · forcer ${fr(nf, 2)}`, 14, 202, nf > nr ? CC.red : CC.green, 10);
+  if (upto >= 2) text(ctx, `+ potentiel, w = ${fr(wv)} : reprendre ${fr(pr, 2)} · forcer ${fr(pf, 2)}`, 14, 218, pf > pr ? CC.red : CC.green, 10);
+  text(ctx, 'le détour, depuis les pièces détachées, gestes maîtrisés', 14, 12, CC.acc, 11);
+}
+
+// ------------------------------------------ 25. the variance of a binary reward
+
+/** P(1 − P) against P, and the variance measured from each start state of the starting policy. */
+function pvar(ctx: Ctx, e: DiagramEnv): void {
+  const x0 = 46, y0 = 46, w = 300, h = 136, M = 0.3;
+  axes2(ctx, x0, y0, w, h, 'taux de succès P', 'variance');
+  const X = (p: number) => x0 + p * w, Y = (v: number) => y0 + h - (v / M) * h;
+  for (const v of [0.1, 0.2]) { line(ctx, x0, Y(v), x0 + w, Y(v), CC.grid, 1); text(ctx, fr(v, 1), x0 - 4, Y(v), CC.dim, 9, 'right'); }
+  for (const p of [0.5, 1]) text(ctx, fr(p, 1), X(p), y0 + h + 9, CC.dim, 9, 'center');
+  ctx.save(); ctx.strokeStyle = CC.acc; ctx.lineWidth = 2; ctx.beginPath();
+  const grow = clamp(e.t / 1.5, 0, 1);
+  for (let i = 0; i <= 100 * grow; i++) { const p = i / 100; i ? ctx.lineTo(X(p), Y(p * (1 - p))) : ctx.moveTo(X(p), Y(p * (1 - p))); }
+  ctx.stroke(); ctx.restore();
+  line(ctx, X(0.5), y0, X(0.5), y0 + h, alpha(CC.acc, 0.4), 1, [3, 3]);
+  const v = cachedMaybe('pvar', gradVariance);
+  if (v) v.P.forEach((p, i) => dot(ctx, X(p), Y(v.rewardVar[i]), CC.blue, 4));
+  text(ctx, 'variance d’une récompense binaire : P(1 − P)', x0, 12, CC.acc, 11);
+  text(ctx, v ? `points : mesurés sur ${fr(20000)} épisodes, un par état de départ` : 'mesure des épisodes…', x0, 27, CC.dim, 9);
+}
+
 export const DIAGRAMS = {
-  tree, explosion, minimax: minimaxDiag, rollouts, phases, puct, strength, nets, alphago, loop, learning, generalize, explore, chain, sgs,
-  curriculum, rewards, nist, slope1d, descent, seeds, variance, credit,
+  tree, explosion, minimax: minimaxDiag, rollouts, phases, puct, strength, qconverge, nets, alphago, loop, learning, generalize, explore, chain, sgs,
+  curriculum, rewards, detour, nist, slope1d, descent, split, seeds, variance, pvar, credit,
 };

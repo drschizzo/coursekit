@@ -27,7 +27,7 @@ const ok = (name: string, cond: boolean, detail = '') => {
 console.log('Vérificateur');
 const expected = [
   'step-length', 'tone', 'link', 'term-order', 'claim', 'answer-length', 'test-pair', 'offered', 'model', 'walk', 'layout', 'summary',
-  'clinic', 'effort', 'stage', 'stage-layout',
+  'clinic', 'effort', 'stage', 'stage-layout', 'spoiler', 'term-early', 'repeat',
 ];
 const r = checkCourse(faulty as any, { stage: faultyStage as any });
 const rules = new Set(r.findings.map((f) => f.rule));
@@ -46,6 +46,12 @@ ok('scène : texte non numérique au bout d’un contrôle', has('stage', '« ra
 ok('scène : préparation qui échoue', has('stage', 'la préparation lève une erreur (simulation impossible)'));
 ok('scène : inconnue de la scène du cours', has('link', 'scène inconnue de la scène du cours : absent'));
 ok('effort annoncé loin de l’estimation', has('effort', '« dix heures »'));
+ok('réponse numérique écrite sur le schéma', has('spoiler', 'question q-num : la réponse (72) se lit dans le schéma tells'));
+ok('ordre attendu écrit sur le schéma', has('spoiler', 'question q-ord : l’ordre attendu se lit dans le schéma tells'));
+ok('réglage fautif écrit sur la scène pendant le diagnostic', has('spoiler', 'cas clin-always : le réglage fautif (k = 2) est écrit dans la scène lab'));
+ok('terme montré par un schéma avant son module', has('term-early', '« notion tardive » apparaît dans le schéma tells') && has('term-early', 'avant le module'));
+ok('terme montré par un schéma avant toute étape', has('term-early', '« notion précoce » apparaît dans le schéma tells') && has('term-early', 'avant toute étape'));
+ok('deux questions qui posent la même chose', has('repeat', 'question q-r1 et question q-r2'));
 
 const d = checkCourse(demo, { stage: demoStage() });
 ok('le cours de démonstration est prêt, sans remarque', d.ok && !d.findings.length, d.findings.map((f) => `[${f.rule}] ${f.msg}`).join(' ; '));

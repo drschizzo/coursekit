@@ -27,7 +27,7 @@ Sans DOM : un cours peut être compilé, parcouru et vérifié partout.
 | `StepOptions` | `{ note?, code?, hud?, layers?, tools?, dwell?, claims? }`. |
 | `Claim` | `{ text, check(): boolean \| string }`. |
 | `ExperimentSpec`, `Control`, `Goal`, `Predict` | Les expériences et leurs contrôles. |
-| `ClinicCase` | `{ id, title, scene, fault, observe: Text, choices, explain, controls, goal, conclusion, justify, exam?, diagram?, symptom?(v) }`. `symptom` : ce que l’élève observe, réduit à une valeur ; le vérificateur exige qu’aucun autre contrôle du cas ne donne le même. |
+| `ClinicCase` | `{ id, title, scene, fault, observe: Text, choices, explain, controls, goal, conclusion, justify, exam?, diagram?: string \| { name, arg? }, symptom?(v) }`. `diagram` avec `arg` : une variante du schéma, qui montre le symptôme sans le réglage fautif. `symptom` : ce que l’élève observe, réduit à une valeur ; le vérificateur exige qu’aucun autre contrôle du cas ne donne le même. |
 | `Term`, `Capsule`, `CapsuleStep`, `Tests`, `TestItem`, `QuizSpec` | Glossaire, fiches, tests, questions. |
 | `DomainModel`, `ModelCheck`, `ParamSpec` | Le modèle : `{ name, params?, checks: { name, run(): string \| null }[], … }`. |
 | `Stage`, `Rect` | L’interface d’une scène : `mount`, `show`, `update`, `layout?(safe)`, `status`, `resetView?`, `dispose`. |
@@ -132,4 +132,6 @@ Importer le thème une fois : `import '@coursekit/ui/theme.css'`.
 | `TuneExpect` | `{ label, test(rows) }` (sur les lignes : `p`, `r`, `runs`) ou `{ label, where?(p), ok(r, p), atLeast?, atMost? }` (par graine : chaque graine par défaut). Voir [outils.md](outils.md#le-hasard--seeds). |
 | `summarize(textes)` | Le résumé des graines d’une case : la valeur commune, les effectifs, ou la médiane et l’étendue. |
 | `mockContext(w?, h?)` | Un contexte de canevas (380 × 236 par défaut) qui ne dessine rien et enregistre les textes tracés. |
+| `parcours(course, scenes?): string` | Le cours en Markdown, dans l’ordre de lecture, avec ce que le schéma et la scène affichent à chaque étape (`coursekit parcours`). |
+| `screenReader(course, tl, scenes?)` | Ce que l’élève a à l’écran à un instant `t` : `{ step, diagram, scene }`, chacun avec ses textes. Lu par les règles `spoiler` et `term-early`. |
 | bin `coursekit` | `check`, `stats`, `tune`, `new`. |
