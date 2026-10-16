@@ -5,7 +5,8 @@ import { defineCourse, choice } from '@coursekit/core';
 
 export default defineCourse({
   id: 'faulty', version: 1, language: 'fr', title: 'Défauts', lead: '—',
-  audience: { level: 'lycée', prerequisites: '—' },
+  // the estimate is a few minutes: the announced effort is far off
+  audience: { level: 'lycée', prerequisites: '—', effort: 'dix heures' },
   modules: [
     { id: 'm1', title: 'Un', pitch: '—', goals: ['—'], summary: ['—'] },
     { id: 'm2', title: 'Deux', pitch: '—', goals: ['—'], summary: [] },
@@ -27,7 +28,9 @@ export default defineCourse({
       ctx.fillText(`rapport ${(1 / e.v.k) * 0}`, 40, 200);
     },
   },
-  defaults: { k: 1 },
+  defaults: { k: 1, j: 0 },
+  stageKeys: ['k', 'j'],
+  scenes: { lab: 'Le labo', absent: 'Une scène que la scène du cours n’a pas', broken: 'Une scène qui ne se prépare pas' },
   model: { name: 'faux', checks: [{ name: 'toujours faux', run: () => 'échec voulu' }] },
   content(c) {
     c.module('m1');
@@ -45,6 +48,44 @@ export default defineCourse({
       c.diagram('messy');
       c.step('Fin', 'Fin.');
       c.experiment({ title: 'k', prompt: '—', controls: [{ type: 'range', key: 'k', label: 'k', min: 0, max: 2 }] });
+      // a lazy text that fails when it is written
+      c.step('Paresseux', () => { throw new Error('modèle indisponible'); });
+      c.stage('absent');
+      c.step('Ailleurs', 'Une scène inconnue de la scène du cours.');
+      c.stage('broken');
+      c.step('Cassée', 'Une scène qui ne se prépare pas.');
+    });
+    // a case whose goal is reached with the fault, whose symptom says nothing,
+    // and whose second broken setting has no control
+    c.clinicCase({
+      id: 'clin-always', title: 'toujours réussi', scene: 'lab', fault: { k: 2, z: 1 },
+      observe: 'On observe.', choices: ['k trop grand', 'j trop grand'], explain: '—',
+      controls: [{ type: 'range', key: 'k', label: 'k', min: 0, max: 2 }, { type: 'range', key: 'j', label: 'j', min: 0, max: 1 }],
+      goal: { label: 'toujours', test: () => true }, symptom: () => 'pareil', conclusion: '—', justify: '—',
+    });
+    // a case that restoring the fault does not repair
+    c.clinicCase({
+      id: 'clin-never', title: 'jamais réparé', scene: 'lab', fault: { k: 2 },
+      observe: 'On observe.', choices: ['k trop grand', 'autre chose'], explain: '—',
+      controls: [{ type: 'range', key: 'k', label: 'k', min: 0, max: 2 }],
+      goal: { label: 'jamais', test: (v) => v.k < 0 }, conclusion: '—', justify: '—',
     });
   },
 });
+
+/**
+ * The faulty course's stage: a read-out out of the safe area, a figure that
+ * is not a number, and a scene whose preparation fails.
+ */
+export const faultyStage = {
+  scenes: {
+    lab: {
+      draw(ctx: CanvasRenderingContext2D, _w: number, _h: number, _t: number, s: Record<string, number>, _d: unknown, safe: { x: number; y: number; w: number; h: number }) {
+        ctx.font = '12px sans-serif';
+        ctx.fillText('une lecture à gauche de la zone utile', safe.x - 200, safe.y + 20);
+        ctx.fillText(`rapport ${s.j ? 1 / 0 : NaN}`, safe.x + 10, safe.y + 60);
+      },
+    },
+    broken: { prepare: () => { throw new Error('simulation impossible'); }, draw() {} },
+  },
+};

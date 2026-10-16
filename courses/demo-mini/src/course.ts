@@ -139,7 +139,6 @@ const course = defineCourse({
     c.chapter('Le frottement de l’air', () => {
       c.stage('fall', { h0: 40, k: 0.6 });
       c.diagram('fallPlot');
-      c.set({ k: 0.6, h0: 40 });
       c.step('Une force qui freine', 'Le frottement de l’air s’oppose au mouvement. Ici il vaut k·v : plus la balle va vite, plus il freine. La vitesse tend vers une vitesse limite, g/k.', {
         claims: [{ text: 'vitesse limite g/k', check: () => Math.abs(simulate({ h0: 1e4, k: 0.6, duration: 20, dt: 1 / 240 }).at(-1)!.v + 9.81 / 0.6) < 0.01 || 'la vitesse finale n’est pas g/k' }],
       });

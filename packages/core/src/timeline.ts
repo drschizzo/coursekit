@@ -11,7 +11,10 @@ export interface Caption {
   t: number;
   kicker: string;
   title: string;
+  /** a lazy text (see `Text`) is written on first reading, then kept */
   text: string;
+  /** the text is written on first reading */
+  lazy: boolean;
   note: string;
   code: string;
   hud: ((v: Vals) => string) | null;
@@ -48,6 +51,8 @@ export interface Stop {
   quiz?: TourQuiz;
   predict?: Predict;
   conclusion?: string;
+  /** the fix of a clinic case: its broken settings, and its symptom (checked by the tools) */
+  clinic?: { id: string; fault: Vals; symptom?: (v: Vals) => unknown };
   explain?: { prompt: string; model: string };
   /** lab: the exercise to open (or 'assembly') */
   lab?: string;

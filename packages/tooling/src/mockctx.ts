@@ -14,14 +14,15 @@ export interface MockContext extends CanvasRenderingContext2D {
 /** Average glyph width of the UI fonts, as a fraction of the font size. */
 const GLYPH = 0.55;
 
-export function mockContext(): MockContext {
+/** A context for a canvas of w × h CSS pixels (a diagram's size by default). */
+export function mockContext(w = 380, h = 236): MockContext {
   const noop = () => {};
   const texts: DrawnText[] = [];
   // a text drawn under a translate / rotate / scale is not where its x, y say
   let transformed = false;
   const stack: { font: unknown; align: unknown; base: unknown; transformed: boolean }[] = [];
   const state: Record<string | symbol, unknown> = {
-    canvas: { width: 380, height: 236, clientWidth: 380 },
+    canvas: { width: w, height: h, clientWidth: w, clientHeight: h },
     font: '10px sans-serif', textAlign: 'start', textBaseline: 'alphabetic',
   };
   const size = () => Number(/(\d+(?:\.\d+)?)px/.exec(String(state.font))?.[1] ?? 10);
@@ -63,14 +64,20 @@ export function mockContext(): MockContext {
   return new Proxy(state, handler) as unknown as MockContext;
 }
 
-/** Problems in the texts of one drawing: out of the frame, over each other, not a number. */
-export function textProblems(texts: DrawnText[], W: number, H: number): string[] {
+export interface Box { x: number; y: number; w: number; h: number }
+
+/**
+ * Problems in the texts of one drawing: out of the frame (0, 0, W, H — or the
+ * rectangle `frame`, named `where`), over each other, not a number.
+ */
+export function textProblems(texts: DrawnText[], W: number, H: number, frame: Box = { x: 0, y: 0, w: W, h: H }, where = 'du cadre'): string[] {
   const out: string[] = [];
   const short = (s: string) => (s.length > 28 ? `${s.slice(0, 27)}…` : s);
   for (const t of texts) {
     if (/\bNaN\b|\bundefined\b|\bnull\b|Infinity/.test(t.s)) out.push(`texte non numérique « ${short(t.s)} »`);
     const m = 2; // tolerance, px
-    if (t.s.trim() && (t.x < -m || t.x + t.w > W + m || t.y < -m || t.y + t.h > H + m)) out.push(`texte hors du cadre « ${short(t.s)} »`);
+    const f = frame;
+    if (t.s.trim() && (t.x < f.x - m || t.x + t.w > f.x + f.w + m || t.y < f.y - m || t.y + t.h > f.y + f.h + m)) out.push(`texte hors ${where} « ${short(t.s)} »`);
   }
   // two labels overlap when their boxes share more than 35 % of the smaller one
   for (let i = 0; i < texts.length; i++) {

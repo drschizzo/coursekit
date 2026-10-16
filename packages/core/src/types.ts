@@ -8,6 +8,13 @@
 /** Live values: shared by the diagrams, the read-outs and (some of them) the stage. */
 export type Vals = Record<string, number>;
 
+/**
+ * A text, or a function that writes it when it is first shown: for a text
+ * that quotes figures the model takes long to compute, so that loading the
+ * course does not wait for them. The checker evaluates every one.
+ */
+export type Text = string | (() => string);
+
 // ---------------------------------------------------------------- questions
 
 export type QuizKind = 'choice' | 'number' | 'order';

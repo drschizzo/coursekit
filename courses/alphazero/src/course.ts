@@ -28,19 +28,20 @@ const CORNER = 2, EDGE = 1;
 const MEAN = (m: number) => playoutRun(FORK, m, 2000)[1999];
 const GO = treeLog10(FACTS.goBranching, FACTS.goDepth);
 const CHESS = treeLog10(FACTS.chessBranching, FACTS.chessDepth);
-const M10 = mctsOf({ sims: 10 });
-const MNOM = mctsOf({});
+/** A value computed on first use: the costly runs of the model wait until a text quotes them, not the loading of the page. */
+const lazy = <V>(f: () => V) => { let v: V | undefined; return () => (v ??= f()); };
+const M10 = lazy(() => mctsOf({ sims: 10 }));
+const MNOM = lazy(() => mctsOf({}));
 /** An example of noise: 10 losses in 100 games. */
 const CI10 = wilson(10, MATCH_GAMES);
-const RUN = trainOf({});
-const LAST = RUN.checkpoints[RUN.checkpoints.length - 1];
+const LAST = lazy(() => { const run = trainOf({}); return run.checkpoints[run.checkpoints.length - 1]; });
 const Q0_FULL = (1 / (1 + Math.exp(VARIANTS[MAIN].d) * (1 - ROBOT.q0) / ROBOT.q0)) ** STEPS.length;
 const VBEST = valueBest();
 const NDATA = valueData().length;
 const GD_NOM = gdOf({});
 /** One step of gradient descent on L(w) = (w − 3)², from w = 1. */
 const W1 = 1, SLOPE1 = 2 * (W1 - 3);
-const VAR = gradVariance();
+const VAR = lazy(gradVariance);
 const R_NOM = robotSeeds({}), R_UNI = robotSeeds({ sampler: 0 });
 const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2; };
 const masteredAt = (rs: typeof R_NOM) => median(rs.runs.map((r) => (r.masteredAt >= 0 ? r.masteredAt : ROBOT.episodes)));
@@ -471,8 +472,8 @@ const course = defineCourse({
     c.chapter('Plus de simulations, et une vérification', () => {
       c.stage('tree');
       c.diagram('strength');
-      c.step('La force grandit avec le calcul', `Sur ${MATCH_GAMES} parties contre le joueur parfait : à 10 simulations par coup, la recherche en perd ${fr(M10.vsPerfect.losses)} ; à ${fr(MCTS_NOMINAL.sims)}, ${fr(MNOM.vsPerfect.losses)}, et l’intervalle de confiance va jusqu’à ${pct(MNOM.ci[1])}. Chaque partie au hasard estime mal, mais l’arbre concentre les visites sur les bons coups, et les estimations se corrigent de niveau en niveau.`, {
-        claims: [{ text: 'perd souvent à 10, presque jamais au nominal', check: () => M10.outcome === 'weak' && MNOM.outcome === 'solid' }],
+      c.step('La force grandit avec le calcul', () => `Sur ${MATCH_GAMES} parties contre le joueur parfait : à 10 simulations par coup, la recherche en perd ${fr(M10().vsPerfect.losses)} ; à ${fr(MCTS_NOMINAL.sims)}, ${fr(MNOM().vsPerfect.losses)}, et l’intervalle de confiance va jusqu’à ${pct(MNOM().ci[1])}. Chaque partie au hasard estime mal, mais l’arbre concentre les visites sur les bons coups, et les estimations se corrigent de niveau en niveau.`, {
+        claims: [{ text: 'perd souvent à 10, presque jamais au nominal', check: () => M10().outcome === 'weak' && MNOM().outcome === 'solid' }],
       });
       c.experiment({
         title: 'Le nombre de simulations', prompt: `Faites varier le nombre de simulations par coup (c = ${fr(MCTS_NOMINAL.c)}).`,
@@ -532,7 +533,7 @@ const course = defineCourse({
       c.stage('selfplay');
       c.diagram('generalize');
       c.step('Le réseau de notre AlphaZero', `Le programme du module suivant utilise un réseau un peu plus grand : ${fr(18)} entrées (les cases de chaque joueur), une couche de ${fr(TRAIN.hidden)} neurones, une sortie de politique et une sortie de valeur. Il est réglé par descente de gradient sur les parties qu’il joue contre lui-même, chacune vue sous ses 8 rotations et symétries.`);
-      c.step('Les positions jamais vues', `Après ${fr(LAST.games)} parties, le programme n’a rencontré que ${fr(LAST.known)} des ${fr(allPositions().length)} positions. Sur les autres, sa politique choisit pourtant un coup optimal ${pct(LAST.netUnseen)} du temps, contre ${pct(RUN.unseenBase)} au hasard. Il a appris des régularités, comme « parer une menace », qui valent aussi pour des positions nouvelles : il généralise.`, {
+      c.step('Les positions jamais vues', () => `Après ${fr(LAST().games)} parties, le programme n’a rencontré que ${fr(LAST().known)} des ${fr(allPositions().length)} positions. Sur les autres, sa politique choisit pourtant un coup optimal ${pct(LAST().netUnseen)} du temps, contre ${pct(trainOf({}).unseenBase)} au hasard. Il a appris des régularités, comme « parer une menace », qui valent aussi pour des positions nouvelles : il généralise.`, {
         claims: [{ text: 'mieux que le hasard sur les positions jamais vues, chaque graine', check: () => TRAIN_SEEDS.every((s) => { const r = trainOf({ tseed: s }); return checkpointAt(r, 1e9).netUnseen > r.unseenBase + 0.04; }) }],
       });
       c.step('Pourquoi pas une table ?', 'Une table qui range une politique pour chaque position rencontrée ferait aussi bien sur celles-là, et pas mieux que le hasard sur les autres. Au morpion, on pourrait tout ranger ; au go, avec environ 10¹⁷⁰ positions, presque toutes seront nouvelles. Sans généralisation, AlphaGo serait impossible.', {
@@ -556,7 +557,7 @@ const course = defineCourse({
       c.diagram('loop');
       c.ask('q-self', 'Un programme qui ne joue que contre lui-même peut-il dépasser son niveau de départ ?', ['oui, sa recherche joue mieux que sa politique', 'non, il répète toujours ses erreurs', 'non, il lui faut un adversaire plus fort', 'oui, mais seulement au morpion'], 'La recherche, guidée par la politique, trouve de meilleurs coups qu’elle : la politique peut apprendre de la recherche.');
       c.step('La boucle d’AlphaZero', `À chaque coup d’une partie d’auto-jeu, le programme fait une recherche guidée par son réseau (${fr(FACTS.azSims)} simulations pour AlphaZero, ${fr(TRAIN.sims)} ici), puis joue. Chaque position de la partie donne deux cibles : la part des visites de chaque coup pour la politique, le résultat final pour la valeur. Le réseau s’en rapproche par descente de gradient.`);
-      c.step('Mesurer l’amélioration', `À la fin de l’entraînement, la politique seule choisit un coup optimal ${pct(LAST.netAcc)} du temps ; guidée par la recherche, ${pct(LAST.searchAcc)}. Une erreur suffit pour perdre contre le joueur parfait : la politique seule perd ${pct(LAST.netLoss)} des parties, la recherche ${pct(LAST.searchLoss)}. En imitant sa recherche, la politique apprend de meilleurs coups qu’elle n’en proposait.`, {
+      c.step('Mesurer l’amélioration', () => `À la fin de l’entraînement, la politique seule choisit un coup optimal ${pct(LAST().netAcc)} du temps ; guidée par la recherche, ${pct(LAST().searchAcc)}. Une erreur suffit pour perdre contre le joueur parfait : la politique seule perd ${pct(LAST().netLoss)} des parties, la recherche ${pct(LAST().searchLoss)}. En imitant sa recherche, la politique apprend de meilleurs coups qu’elle n’en proposait.`, {
         claims: [{ text: 'la recherche choisit nettement mieux, chaque graine', check: () => TRAIN_SEEDS.every((s) => { const cp = checkpointAt(trainOf({ tseed: s }), 1e9); return cp.searchAcc > cp.netAcc + 0.15; }) }],
       });
       c.diagram('learning');
@@ -613,7 +614,7 @@ const course = defineCourse({
       c.diagram('chain', { arg: '0' });
       c.ask('q-start', 'Avec une récompense binaire, si le robot part toujours des pièces détachées…', ['il n’apprend rien', 'il apprend lentement mais sûrement', 'il apprend le plus vite possible', 'il apprend surtout les dernières étapes'], 'Il ne réussit jamais : tous les épisodes reçoivent 0, rien ne distingue un bon essai d’un mauvais.');
       c.step('Un signal qui manque', `Le robot ne reçoit qu’une récompense binaire : 1 si l’écrou est vissé, 0 sinon. Il apprend de l’écart entre les épisodes réussis et les autres ; la variance d’une telle récompense vaut P(1 − P), où P est le taux de succès. À P = 0, elle est nulle : aucun signal. Elle est maximale à P = 0,5.`, {
-        claims: [{ text: 'variance mesurée ≈ P(1 − P)', check: () => VAR.rewardVar.every((x, i) => Math.abs(x - VAR.rewardP[i]) < 0.02) }],
+        claims: [{ text: 'variance mesurée ≈ P(1 − P)', check: () => VAR().rewardVar.every((x, i) => Math.abs(x - VAR().rewardP[i]) < 0.02) }],
       });
       c.diagram('curriculum');
       c.experiment({
@@ -674,8 +675,8 @@ const course = defineCourse({
       c.diagram('credit');
       c.step('Qui a fait échouer l’essai ?', 'Un épisode raté ne dit pas quelle action a causé l’échec : c’est le problème de l’attribution du mérite. La mise à jour rend moins probables toutes les actions de l’épisode, même celles qui avaient réussi. Seule la moyenne de nombreux épisodes sépare les bonnes actions des mauvaises : le gradient d’un seul épisode est très bruité.');
       c.diagram('variance');
-      c.step('Une base de référence', `On ne crédite donc pas chaque action de tout ce qui a suivi, mais de l’écart à ce qu’on attendait en partant de là : la base de référence. La direction moyenne du gradient ne change pas ; son hasard, oui. Mesurée sur ${fr(20000)} épisodes, sa variance baisse de ${pct(1 - VAR.baseline / VAR.plain)}. Le façonnage par potentiel agit comme une base : il la réduit aussi.`, {
-        claims: [{ text: 'la base réduit la variance', check: () => VAR.baseline < 0.85 * VAR.plain && VAR.shaped[1] < VAR.plain }],
+      c.step('Une base de référence', () => `On ne crédite donc pas chaque action de tout ce qui a suivi, mais de l’écart à ce qu’on attendait en partant de là : la base de référence. La direction moyenne du gradient ne change pas ; son hasard, oui. Mesurée sur ${fr(20000)} épisodes, sa variance baisse de ${pct(1 - VAR().baseline / VAR().plain)}. Le façonnage par potentiel agit comme une base : il la réduit aussi.`, {
+        claims: [{ text: 'la base réduit la variance', check: () => VAR().baseline < 0.85 * VAR().plain && VAR().shaped[1] < VAR().plain }],
       });
       c.diagram('seeds');
       c.experiment({
@@ -719,7 +720,7 @@ const course = defineCourse({
     });
     c.clinicCase({
       id: 'clin-target', title: 'un entraînement qui réussit presque tout, sauf la tâche', scene: 'robot', fault: { target: 0.95 },
-      observe: `Le tableau de bord affiche ${pct(robotSeeds({ target: 0.95 }).runs[0].final.train)} d’épisodes réussis. Pourtant, en partant des pièces détachées, le robot ne visse la petite pièce que ${pct(robotSeeds({ target: 0.95 }).runs[0].final.P[4])} du temps. Les quatre graines donnent le même tableau.`,
+      observe: () => `Le tableau de bord affiche ${pct(robotSeeds({ target: 0.95 }).runs[0].final.train)} d’épisodes réussis. Pourtant, en partant des pièces détachées, le robot ne visse la petite pièce que ${pct(robotSeeds({ target: 0.95 }).runs[0].final.P[4])} du temps. Les quatre graines donnent le même tableau.`,
       choices: ['la cible de SGS, beaucoup trop haute', 'des points pour être près du but', 'des pas trop grands pour ces lots'],
       explain: 'SGS favorise les configurations réussies 95 % du temps : presque tous les épisodes partent de configurations déjà maîtrisées.',
       diagram: 'curriculum',
@@ -736,7 +737,7 @@ const course = defineCourse({
     c.module('exam');
     c.clinicCase({
       id: 'exam-dense', exam: true, title: 'un écrou qui se coince de travers', scene: 'robot', fault: { reward: 1, w: 4 },
-      observe: `Le robot amène l’écrou et l’aligne parfaitement, mais l’écrou se coince à l’insertion : il ne réussit que ${pct(robotSeeds({ reward: 1, w: 4 }).runs[0].final.P[4])} du temps, et ne repose jamais l’écrou pour le reprendre. Relancé avec trois autres graines, il fait exactement pareil.`,
+      observe: () => `Le robot amène l’écrou et l’aligne parfaitement, mais l’écrou se coince à l’insertion : il ne réussit que ${pct(robotSeeds({ reward: 1, w: 4 }).runs[0].final.P[4])} du temps, et ne repose jamais l’écrou pour le reprendre. Relancé avec trois autres graines, il fait exactement pareil.`,
       choices: ['des points trop forts pour être près du but', 'un effondrement dû à de trop grands pas', 'la cible de SGS, trop haute'],
       explain: 'Toutes les graines plafonnent de la même manière : ce n’est pas un accident de lot, c’est la récompense qui fait préférer l’écrou coincé.',
       diagram: 'rewards',

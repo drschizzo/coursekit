@@ -10,7 +10,9 @@ coursekit stats src/course.ts
 ```
 
 et ses fonctions (`checkCourse`, `defineTune`, `runTune`, `mockContext`).
-`test/faulty.ts` est un cours rempli de défauts : `node test/run.ts` vérifie que chaque règle
-les trouve.
+`test/faulty.ts` est un cours rempli de défauts, avec sa scène : `node test/run.ts` vérifie que
+chaque règle les trouve, que le cours de démonstration passe sans remarque, et teste les textes
+paresseux, les graines de `defineTune`, `rng`, `wilson`, la lecture de la durée annoncée et le
+port de `coursekit new`.
 
 Voir [docs/outils.md](../../docs/outils.md).

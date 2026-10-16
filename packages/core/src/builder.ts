@@ -10,8 +10,8 @@
 // REVIEW, TEST, CARD), without the timestamps.
 
 import { labelsFor, type LabelSet } from './labels.ts';
-import { Timeline, type Stop } from './timeline.ts';
-import type { Control, CourseDef, ExperimentSpec, Goal, QuizSpec, StepOptions, Vals } from './types.ts';
+import { Timeline, type Caption, type Stop } from './timeline.ts';
+import type { Control, CourseDef, ExperimentSpec, Goal, QuizSpec, StepOptions, Text, Vals } from './types.ts';
 
 export interface ClinicCase {
   id: string;
@@ -19,7 +19,8 @@ export interface ClinicCase {
   /** stage scene, and the broken settings (they end with the case) */
   scene: string;
   fault: Vals;
-  observe: string;
+  /** what the learner sees (a function: written when shown, see `Text`) */
+  observe: Text;
   /** diagnosis choices, the right one first */
   choices: string[];
   explain: string;
@@ -32,6 +33,12 @@ export interface ClinicCase {
   exam?: boolean;
   /** a diagram to show instead of (or with) the stage */
   diagram?: string;
+  /**
+   * What the learner observes, as a value (a word, a figure): the checker
+   * requires that the fault gives a symptom no other control of the case
+   * gives, so that the diagnosis can be made from what is shown.
+   */
+  symptom?: (v: Vals) => unknown;
 }
 
 export interface Builder {
@@ -39,8 +46,11 @@ export interface Builder {
   module(id: string): void;
   /** a chapter; its body calls the other functions */
   chapter(title: string, body: () => void, opts?: { part?: string }): void;
-  /** a step: a title and a short text (≤ 75 words) */
-  step(title: string, text: string, opts?: StepOptions): void;
+  /**
+   * a step: a title and a short text (≤ 75 words). The text may be a
+   * function, written when the step is first shown (see `Text`).
+   */
+  step(title: string, text: Text, opts?: StepOptions): void;
   /** the diagram shown from the next step on (null: none); reset at each chapter */
   diagram(name: string | null, opts?: { arg?: string; big?: boolean }): void;
   /** the stage scene from the next step on, with its own settings (they end with the scene) */
@@ -66,6 +76,8 @@ export interface Builder {
 
 /** Seconds a step animates by default: about 4 s per 15 words, 6 to 20 s. */
 export const dwellOf = (text: string): number => Math.max(6, Math.min(20, Math.round((text.split(/\s+/).length / 15) * 4)));
+/** Seconds a lazy text animates when no `dwell` is given: its length is not known when the course compiles. */
+export const LAZY_DWELL = 12;
 
 export function compile(course: CourseDef): Timeline {
   const L: LabelSet = labelsFor(course.labels);
@@ -158,7 +170,9 @@ export function compile(course: CourseDef): Timeline {
 
     step(title, text, o = {}) {
       if (!inChapter) fail(`étape « ${title} » hors d’un chapitre`);
-      const dwell = o.dwell ?? dwellOf(text);
+      const write = typeof text === 'function' ? text : null;
+      const lazy = write != null;
+      const dwell = o.dwell ?? (write ? LAZY_DWELL : dwellOf(text as string));
       const t = cursor;
       for (const s of holdStep) s.until = t;
       holdStep = [];
@@ -167,11 +181,17 @@ export function compile(course: CourseDef): Timeline {
         closeDiag(t);
         diagOpen = { t0: t, ...diag };
       } else if (!diag && diagOpen) closeDiag(t);
-      tl.caps.push({
-        t, kicker: part === chap ? part : `${part} · ${chap}`, title, text,
+      const cap: Caption = {
+        t, kicker: part === chap ? part : `${part} · ${chap}`, title, text: write ? '' : (text as string), lazy,
         note: o.note ?? '', code: o.code ?? '', hud: o.hud ?? null, layers: o.layers ?? 0, tools: o.tools ?? [], dwell,
         claims: o.claims ?? [],
-      });
+      };
+      if (write) {
+        // written on first reading, then kept
+        let s: string | undefined;
+        Object.defineProperty(cap, 'text', { enumerable: true, get: () => (s ??= write()) });
+      }
+      tl.caps.push(cap);
       last = { t, dwell, pauses: 0 };
       cursor = t + dwell;
       if (!started) {
@@ -246,6 +266,7 @@ export function compile(course: CourseDef): Timeline {
           afterDiagnosis: true,
           goals: [{ label: k.goal.label, test: ({ v }) => k.goal.test(v) }], conclusion: k.conclusion,
         });
+        tl.stops[tl.stops.length - 1].clinic = { id: k.id, fault: k.fault, symptom: k.symptom };
         c.step(L.clinicJustify, L.clinicJustifyText);
         c.explain(`${k.id}-why`, L.clinicJustifyPrompt, k.justify);
       });

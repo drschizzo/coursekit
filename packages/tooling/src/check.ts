@@ -1,12 +1,17 @@
 // The four levels of checks a course must pass before it is published:
 //   1. it compiles (the builder refuses malformed content);
 //   2. the pedagogical lint: the rules of the format, and the links;
-//   3. the domain model's checks and the figures stated in the text;
-//   4. a complete walk: every step, read-out, diagram and exercise runs.
+//   3. the domain model's checks, the figures stated in the text, and the
+//      clinic cases (the fault breaks the goal, restoring it repairs it);
+//   4. a complete walk: every step, read-out, diagram, stage scene and
+//      exercise runs.
 // The rules come from avbd's course/mini.selftest.ts; the ones about terms,
 // goals, test pairs and phrasing are new.
 
-import { compile, controlBounds, createGlossary, diagramVariants, type CourseDef, type QuizSpec, type Timeline } from '@coursekit/core';
+import {
+  compile, controlBounds, courseMinutes, createGlossary, diagramVariants, effortMinutes, fmtMinutes,
+  type CourseDef, type QuizSpec, type Rect, type Stop, type Timeline, type Vals,
+} from '@coursekit/core';
 import { DH, DW, TOOL_DIAGRAMS } from '@coursekit/diagrams';
 import {
   primmDefinesSlot, verifyCalculation, verifyClassify, verifyCode, verifySequence,
@@ -17,10 +22,34 @@ import { mockContext, textProblems } from './mockctx.ts';
 export interface Finding { level: 'error' | 'warning'; rule: string; msg: string }
 export interface Report { course: string; findings: Finding[]; stats: Record<string, number>; ok: boolean }
 
+/** A scene of a canvasStage, as the checker sees it (see @coursekit/ui). */
+export interface SceneLike {
+  prepare?(settings: Vals): unknown;
+  draw(ctx: CanvasRenderingContext2D, w: number, h: number, t: number, settings: Vals, data: unknown, safe: Rect): void;
+}
+
+export interface CheckOptions {
+  /** the course's stage: a canvasStage's scenes are drawn and their texts checked */
+  stage?: { scenes?: Record<string, SceneLike> } | null;
+  /** why the stage could not be loaded */
+  stageError?: string;
+}
+
+/**
+ * The two windows the stage scenes are drawn in: a wide screen, the text on
+ * the left and the diagram on the right; a phone, the panels above and below.
+ */
+export const SAFE_ZONES: { name: string; w: number; h: number; safe: Rect }[] = [
+  { name: 'large', w: 1440, h: 900, safe: { x: 440, y: 72, w: 560, h: 740 } },
+  { name: 'étroite', w: 390, h: 844, safe: { x: 8, y: 64, w: 374, h: 300 } },
+];
+/** The effort announced may differ from the estimate by this much before a remark. */
+const EFFORT_SLACK = 0.15;
+
 const MAX_WORDS = 75;
 const DEFAULT_BANNED = ['incroyable', 'magique', 'la bonne nouvelle', 'le secret', 'révolutionnaire', 'génial', 'bluffant', 'spectaculaire'];
 
-export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }): Report {
+export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }, opts: CheckOptions = {}): Report {
   const findings: Finding[] = [];
   const err = (rule: string, msg: string) => findings.push({ level: 'error', rule, msg });
   const warn = (rule: string, msg: string) => findings.push({ level: 'warning', rule, msg });
@@ -42,10 +71,14 @@ export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }): 
   // steps
   const banned = [...DEFAULT_BANNED, ...(course.bannedPhrases ?? [])];
   for (const c of tl.caps) {
-    const words = c.text.split(/\s+/).filter(Boolean).length;
+    // a lazy text is written here, like at its first reading
+    let text: string;
+    try { text = c.text; } catch (x: any) { err('walk', `« ${c.title} » : le texte calculé lève une erreur (${x?.message ?? x})`); continue; }
+    if (/\bNaN\b|\bundefined\b|\bnull\b|Infinity/.test(text)) err('walk', `« ${c.title} » : texte non numérique « ${text.slice(0, 60)} »`);
+    const words = text.split(/\s+/).filter(Boolean).length;
     if (words > MAX_WORDS) err('step-length', `étape trop longue (${words} mots) : « ${c.title} »`);
     for (const id of c.tools) if (!capsules.has(id)) err('link', `fiche inconnue ${id} dans « ${c.title} »`);
-    const all = `${c.title} ${c.text} ${c.note}`;
+    const all = `${c.title} ${text} ${c.note}`;
     if (/!(?![=])/.test(all.replace(/\/\/[^\n]*/g, ''))) err('tone', `point d’exclamation dans « ${c.title} »`);
     for (const b of banned) if (all.toLowerCase().includes(b)) err('tone', `tournure à éviter « ${b} » dans « ${c.title} »`);
     // a glossary term must not appear before the module that introduces it
@@ -97,6 +130,13 @@ export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }): 
   for (const it of course.tests?.post ?? []) if (!it.pair || !pre.has(it.pair)) err('test-pair', `test final : la question ${it.id} n’a pas de jumelle au test de départ`);
   for (const it of course.tests?.tools ?? []) if (it.tool && !capsules.has(it.tool)) err('link', `test de départ : la question ${it.id} renvoie à une fiche inconnue`);
 
+  // the effort announced on the home page, against the estimate shown next to it
+  const minutes = courseMinutes(tl, exercises);
+  const announced = course.audience.effort ? effortMinutes(course.audience.effort) : null;
+  if (announced && (minutes < announced[0] * (1 - EFFORT_SLACK) || minutes > announced[1] * (1 + EFFORT_SLACK))) {
+    warn('effort', `le cours annonce « ${course.audience.effort} », l’estimation de la page d’accueil donne ${fmtMinutes(minutes)}`);
+  }
+
   // modules: assessed, with something to write
   tl.modules.forEach((m, i) => {
     if (m.kind !== 'core') return;
@@ -114,6 +154,7 @@ export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }): 
       if (e) err('model', `${c.name} : ${e}`);
     }
   }
+  for (const st of tl.stops) if (st.clinic) clinic(tl, st, err);
   for (const c of tl.caps) for (const cl of c.claims) {
     let r: boolean | string;
     try { r = cl.check(); } catch (x: any) { r = `erreur : ${x?.message ?? x}`; }
@@ -136,6 +177,8 @@ export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }): 
     }
   }
   walk(course, tl, err, warn);
+  if (opts.stageError) err('stage', `la scène ne se charge pas : ${opts.stageError}`);
+  if (opts.stage?.scenes) stageWalk(tl, opts.stage.scenes, err, warn);
 
   const stats = {
     modules: tl.modules.filter((m) => m.kind === 'core').length,
@@ -148,6 +191,7 @@ export function checkCourse(course: CourseDef & { workshop?: WorkshopConfig }): 
     révisions: tl.stops.filter((s) => s.kind === 'review').length,
     termes: course.glossary?.length ?? 0,
     fiches: course.toolbox?.length ?? 0,
+    minutes,
   };
   return { course: course.id, findings, stats, ok: !findings.some((f) => f.level === 'error') };
 }
@@ -198,6 +242,95 @@ function walk(course: CourseDef, tl: Timeline, err: (rule: string, msg: string) 
     for (const g of st.goals) {
       for (const v of vs) {
         try { g.test({ v, ptr: { x: 0, y: 0 }, hits: new Set() }); } catch (x: any) { err('walk', `expérience « ${st.title} », objectif « ${g.label} » : ${x?.message ?? x}`); break; }
+      }
+    }
+  }
+}
+
+const shown = (x: unknown) => (typeof x === 'string' ? x : JSON.stringify(x));
+
+/**
+ * A clinic case must be diagnosable and repairable: with the broken settings
+ * the goal is missed; restoring only them (to the values in force before the
+ * case) reaches it; and the symptom, when given, is not the one another
+ * control of the case would give.
+ */
+function clinic(tl: Timeline, st: Stop, err: (rule: string, msg: string) => void): void {
+  const k = st.clinic!;
+  const where = `cas clinique ${k.id}`;
+  const goal = st.goals?.[0];
+  if (!goal) return;
+  const reached = (v: Vals) => goal.test({ v, ptr: { x: 0, y: 0 }, hits: new Set() });
+  // the values before the case: defaults and set(), without the case's scene
+  const before: Vals = { ...tl.defaults };
+  for (const s of tl.sets) { if (st.t < s.t) break; Object.assign(before, s.patch); }
+  const broken = tl.eval(st.t);
+  const healthy: Vals = { ...broken };
+  for (const key of Object.keys(k.fault)) { if (key in before) healthy[key] = before[key]; else delete healthy[key]; }
+  const faultKeys = Object.keys(k.fault);
+  for (const key of faultKeys) if (!st.controls.some((c) => c.key === key)) err('clinic', `${where} : le réglage fautif ${key} n’a pas de contrôle, il ne peut pas être réparé`);
+  if (faultKeys.every((key) => broken[key] === healthy[key])) { err('clinic', `${where} : le réglage fautif est déjà la valeur par défaut`); return; }
+  try {
+    if (reached(broken)) err('clinic', `${where} : avec le réglage fautif, l’objectif « ${goal.label} » est déjà atteint`);
+    if (!reached(healthy)) err('clinic', `${where} : en rétablissant ${faultKeys.map((key) => `${key} = ${healthy[key] ?? '(par défaut)'}`).join(', ')}, l’objectif « ${goal.label} » n’est pas atteint`);
+  } catch (x: any) { err('clinic', `${where} : l’objectif lève une erreur (${x?.message ?? x})`); return; }
+  if (!k.symptom) return;
+  try {
+    const sym = shown(k.symptom(broken));
+    for (const c of st.controls) {
+      if (faultKeys.includes(c.key)) continue;
+      for (const x of controlBounds(c)) {
+        if (x === healthy[c.key]) continue;
+        if (shown(k.symptom({ ...healthy, [c.key]: x })) === sym) err('clinic', `${where} : le symptôme du défaut (${sym}) est aussi celui de « ${c.label} » = ${x}, le diagnostic ne peut pas les distinguer`);
+      }
+    }
+  } catch (x: any) { err('clinic', `${where} : le symptôme lève une erreur (${x?.message ?? x})`); }
+}
+
+/**
+ * Every stage scene, with the settings of each place it is shown (and of the
+ * experiments there, their stage controls at their bounds), drawn in the two
+ * windows of SAFE_ZONES at a few moments: nothing may throw or print a
+ * non-number; a text out of the safe area, or over another, is a remark.
+ */
+function stageWalk(tl: Timeline, scenes: Record<string, SceneLike>, err: (rule: string, msg: string) => void, warn: (rule: string, msg: string) => void): void {
+  const runs = new Map<string, { key: string; label: string; v: Vals }>();
+  const add = (key: string, label: string, v: Vals) => {
+    const id = `${key}|${JSON.stringify(Object.entries(v).sort())}`;
+    if (!runs.has(id)) runs.set(id, { key, label, v });
+  };
+  for (const sc of tl.scenes) {
+    if (!scenes[sc.key]) { err('link', `scène inconnue de la scène du cours : ${sc.key}`); continue; }
+    add(sc.key, `scène ${sc.key}`, tl.stageVals(sc.t + 1e-3));
+  }
+  for (const st of tl.stops) {
+    if (st.kind !== 'try') continue;
+    const sc = tl.sceneAt(st.t);
+    if (!sc || !scenes[sc.key]) continue;
+    const base = tl.stageVals(st.t);
+    for (const c of st.controls) {
+      if (!tl.stageKeys.has(c.key)) continue;
+      for (const x of controlBounds(c)) add(sc.key, `scène ${sc.key}, « ${st.title} », ${c.label} = ${x}`, { ...base, [c.key]: x });
+    }
+  }
+  const reported = new Set<string>();
+  for (const { key, label, v } of runs.values()) {
+    const scene = scenes[key];
+    let data: unknown;
+    try { data = scene.prepare ? scene.prepare({ ...v }) : null; } catch (x: any) { err('stage', `${label} : la préparation lève une erreur (${x?.message ?? x})`); continue; }
+    for (const z of SAFE_ZONES) {
+      const ctx = mockContext(z.w, z.h);
+      for (const t of [0, 1.5, 6, 40]) {
+        ctx.reset();
+        try { scene.draw(ctx, z.w, z.h, t, { ...v }, data, { ...z.safe }); } catch (x: any) { err('stage', `${label}, zone ${z.name} : ${x?.message ?? x}`); break; }
+        for (const p of textProblems(ctx.texts, z.w, z.h, z.safe, 'de la zone utile')) {
+          // once per scene, window and problem: a read-out whose figures change is one text
+          const id = `${key}|${z.name}|${p.replace(/\d[\d\s,.]*/g, '#')}`;
+          if (reported.has(id)) continue;
+          reported.add(id);
+          if (p.startsWith('texte non numérique')) err('stage', `${label}, zone ${z.name} : ${p}`);
+          else warn('stage-layout', `${label}, zone ${z.name} : ${p}`);
+        }
       }
     }
   }

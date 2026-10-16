@@ -81,9 +81,10 @@ npm install
 ```
 
 Le cours est un espace de travail npm : `npm test`, `npm run check`, `npm run tune` et
-`npm run build` à la racine l’incluent sans autre déclaration. Donner un port fixe à son serveur
-de développement dans `courses/<id>/package.json` (`vite --port 518x --strictPort`, un port
-libre). Compléter le `README.md` créé (plan des modules, modèle, simplifications), sur le modèle
+`npm run build` à la racine l’incluent sans autre déclaration. `coursekit new` donne déjà un port
+fixe et libre au serveur de développement (`vite --port 518x --strictPort` dans
+`courses/<id>/package.json`), une scène d’exemple (`src/stage.ts`) et un `main.ts` qui la monte.
+Compléter le `README.md` créé (plan des modules, modèle, simplifications), sur le modèle
 de `courses/fusee/README.md`.
 
 Fichiers : `src/model.ts`, `src/tune.ts`, `src/diagrams.ts`, `src/stage.ts`, `src/course.ts`,
@@ -107,6 +108,11 @@ référence du format est `docs/ecrire-un-cours.md` ; celle de l’API, `docs/re
 4. Écrire chaque fenêtre dans `expect` du fichier de réglage, et ajouter une `check` du modèle
    pour l’issue nominale.
 5. Envelopper la simulation partagée par la scène et les schémas dans `memo(...)`.
+6. **Un modèle qui tire au hasard** tire avec `rng(seed)` de `@coursekit/core` et se règle sur
+   plusieurs graines : `seeds: [1, 2, 3, 4, 5]` dans `defineTune`, `run(p, seed)`, et des
+   fenêtres par graine (`{ label, where, ok }` pour « chaque graine », `atLeast` / `atMost` pour
+   « au moins / au plus k sur n »). Jamais une fenêtre réglée sur une seule graine. Un taux mesuré
+   sur n parties se cite avec son intervalle `wilson(k, n)`.
 
 Ne pas passer à l’étape 5 tant que le balayage ne donne pas ces fenêtres.
 
@@ -135,7 +141,10 @@ Le contenu s’écrit dans l’ordre de lecture avec le constructeur (`c.module`
   d’exclamation, pas de « incroyable », « magique », « le secret »… Une phrase dit une chose.
 - **Une idée par étape**, 75 mots au plus. Le titre nomme l’idée.
 - **Chiffres calculés.** Tout chiffre du texte vient du modèle (gabarit `${fr(...)}`) et toute
-  affirmation chiffrée importante porte une `claim` vérifiée par le modèle.
+  affirmation chiffrée importante porte une `claim` vérifiée par le modèle. Quand le calcul est
+  coûteux (un entraînement, des centaines de parties), écrire le texte comme une fonction,
+  `c.step(titre, () => \`…\`)` (et `observe: () => …` d’un cas clinique) : il est calculé à
+  l’affichage, pas au chargement de la page ; ne pas calculer ces valeurs au niveau du module.
 - **Glossaire.** Chaque terme technique a une entrée avec le `module` qui l’introduit ; il
   n’apparaît pas dans un texte avant ce module (le vérificateur le contrôle).
 - **Questions.** La bonne réponse est écrite en premier (le constructeur la déplace). Les
@@ -146,6 +155,10 @@ Le contenu s’écrit dans l’ordre de lecture avec le constructeur (`c.module`
 - **Expériences.** Toujours une prédiction (`predict`), des objectifs progressifs (`seq: true`)
   qui font explorer les deux côtés de la fenêtre, et une conclusion qui dit ce qu’il fallait
   observer.
+- **Cas cliniques.** `coursekit check` exige que l’objectif soit faux avec le réglage fautif et
+  vrai en rétablissant ce seul réglage (attention aux `c.set` antérieurs, qui valent aussi pendant
+  le cas). Donner `symptom(v)` (l’issue observée) : aucun autre contrôle du cas ne doit donner le
+  même symptôme.
 - **Explications écrites.** Une consigne précise (« Expliquez pourquoi… ») et une réponse modèle
   qui relie la cause, le mécanisme et l’effet.
 - **Exercices.** Calcul guidé : 2 ou 3 étapes avec les valeurs du modèle. Code : signature,
@@ -159,7 +172,9 @@ Le contenu s’écrit dans l’ordre de lecture avec le constructeur (`c.module`
 1. `npm run typecheck`, `npm run tune -w courses/<id>` puis `npm run check -w courses/<id>`
    (ou `npm test` pour tout le dépôt). Corriger jusqu’à
    « ✓ prêt (0 remarque) » : les remarques `layout` (texte hors du cadre, textes superposés,
-   trouvées en dessinant chaque schéma aux bornes des expériences) se corrigent aussi. Ne jamais
+   trouvées en dessinant chaque schéma aux bornes des expériences), `stage-layout` (texte de scène
+   hors de `safe`, sur un écran large ou étroit) et `effort` (durée annoncée loin de l’estimation)
+   se corrigent aussi. Ne jamais
    affaiblir une règle du vérificateur pour passer.
 2. Lancer le serveur de développement (onglet de terminal) et ouvrir le cours dans le navigateur
    intégré :
