@@ -389,6 +389,7 @@ const course = defineCourse({
       c.diagram('rule');
       c.ask('q-rule', 'Dans un automate cellulaire, la règle qui calcule le nouvel état d’une cellule…', ['est la même partout et à chaque instant', 'change selon la place de la cellule', 'est tirée au hasard à chaque instant', 'dépend de la taille de l’automate'], 'Une seule règle, appliquée par toutes les cellules à chaque cycle : c’est ce qui fait d’un automate un univers cohérent.');
       c.step('Des cellules et une règle', 'Un automate cellulaire est une rangée de cellules, ici refermée en anneau. Chaque cellule vaut 0 ou 1. À chaque cycle d’horloge, chacune calcule son nouvel état à partir du sien et de ceux de ses deux voisines, avec la même règle partout.');
+      c.step('Un anneau, dessiné à plat', 'Refermer la rangée en anneau, c’est relier ses deux bouts : la cellule la plus à droite a pour voisine de droite la cellule la plus à gauche. Il n’y a donc pas de bord. La scène déroule cet anneau à plat, une ligne par cycle : un motif qui sort à droite revient à gauche.');
       c.step('Une règle tient dans un nombre', `Trois cellules de 0 ou de 1 forment 8 voisinages possibles. Une règle dit ce que devient la cellule pour chacun : 8 réponses, soit un nombre binaire de 8 chiffres. Il y a donc ${fr(2 ** 8)} règles, numérotées de 0 à 255. Le schéma montre la règle 30.`, { tools: ['B1'] });
       c.diagram('spacetime');
       c.step('Tout est fixé au départ', 'La règle ne laisse aucune place au hasard : le même état donne toujours le même suivant. Toute l’histoire est fixée par la règle et l’état de départ. Le schéma la dessine ligne après ligne, le temps descendant.');
@@ -407,7 +408,7 @@ const course = defineCourse({
         seq: true, conclusion: 'La règle 204 recopie chaque cellule, la règle 0 éteint tout ; la règle 30, à partir d’une seule cellule, produit un motif irrégulier. Des règles tout aussi courtes donnent des histoires très différentes.',
       });
       c.exercise('cell', 'Dans l’atelier, programmez la règle d’une cellule à partir du numéro de la règle.');
-      c.question('q-rule-num', 'Combien de règles différentes existe-t-il pour un automate dont chaque cellule, valant 0 ou 1, ne voit que ses deux voisines ?', ['256', '8', '3', '64'], 'Il y a 8 voisinages possibles et 2 réponses possibles pour chacun : 2^8 = 256 règles.');
+      c.question('q-rule-num', 'Combien de règles différentes existe-t-il pour un automate dont chaque cellule, valant 0 ou 1, ne voit que ses deux voisines ?', ['256', '8', '3', '64'], '8, c’est le nombre de voisinages (gauche, cellule, droite), pas de règles. Une règle est un tableau qui donne, pour chacun des 8 voisinages, le nouvel état : 0 ou 1. Deux choix pour la première case du tableau, deux pour la deuxième… jusqu’à la huitième : 2 × 2 × 2 × 2 × 2 × 2 × 2 × 2 = 2^8 = 256 tableaux différents, donc 256 règles.');
     });
     c.chapter('La configuration jardin d’Éden', () => {
       c.stage('ca', { rule: 30, caSeed: 1 });

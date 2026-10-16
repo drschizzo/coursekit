@@ -61,9 +61,13 @@ function rule(ctx: Ctx, e: DiagramEnv): void {
 function spacetime(ctx: Ctx, e: DiagramEnv): void {
   const r = Math.round(clamp(val(e, 'rule', 30), 0, 255)), seed = Math.round(val(e, 'caSeed', 0));
   const rows = cached(`st|${r}|${seed}`, () => history(r, 51, seed, 46));
-  const k = 4, x0 = 14, y0 = 20, upto = Math.min(rows.length, 1 + Math.floor(e.t * 12));
+  const k = 4, x0 = 14, y0 = 28, upto = Math.min(rows.length, 1 + Math.floor(e.t * 12));
   ctx.fillStyle = 'rgba(230,234,245,.04)'; ctx.fillRect(x0, y0, 51 * k, 46 * k);
   drawHistory(ctx, rows, x0, y0, k, upto);
+  // the ring, unrolled: the left and right edges touch
+  ctx.save(); ctx.strokeStyle = CC.blue; ctx.lineWidth = 1.2; ctx.setLineDash([4, 3]);
+  ctx.beginPath(); ctx.moveTo(x0, y0 - 2); ctx.bezierCurveTo(x0, y0 - 12, x0 + 51 * k, y0 - 12, x0 + 51 * k, y0 - 2); ctx.stroke(); ctx.restore();
+  text(ctx, 'bords reliés : un anneau', x0 + (51 * k) / 2, y0 - 19, CC.blue, 9, 'center');
   arrow(ctx, x0 + 51 * k + 8, y0, x0 + 51 * k + 8, y0 + 46 * k, CC.dim, 1.2, 5);
   text(ctx, 'temps', x0 + 51 * k + 14, y0 + 8, CC.dim, 10);
   const xr = 250;

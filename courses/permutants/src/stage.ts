@@ -46,11 +46,18 @@ export const stage = () => canvasStage({
     draw(ctx, w, h, t, s, data, safe) {
       const d = data as { rule: number; seed: number; h: Row[] };
       background(ctx, w, h);
-      const a = area(safe), k = Math.max(1.5, Math.min(6, a.w / 120)), vis = Math.max(1, Math.floor(a.h / k));
+      const a = area(safe, 124), k = Math.max(1.5, Math.min(6, a.w / 120)), vis = Math.max(1, Math.floor(a.h / k));
       const cyc = Math.floor(t * 14), from = Math.max(0, Math.min(cyc - vis, d.h.length - vis)) % Math.max(1, d.h.length - vis);
       const x = a.x + (a.w - 120 * k) / 2;
       ctx.fillStyle = 'rgba(230,234,245,.03)'; ctx.fillRect(x, a.y, 120 * k, vis * k);
       rows(ctx, d.h, from, Math.min(vis, cyc + 1), x, a.y, k, C.acc);
+      // the ring, unrolled: its two ends are neighbours
+      const W = 120 * k;
+      ctx.strokeStyle = 'rgba(124,156,255,.7)'; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.moveTo(x, a.y - 2); ctx.bezierCurveTo(x, a.y - 18, x + W, a.y - 18, x + W, a.y - 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = C.blue; ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('les deux bords sont voisins', x + W / 2, a.y - 25);
+      ctx.textAlign = 'left';
       hud(ctx, safe, [`règle ${fr(d.rule)} · anneau de ${fr(120)} cellules`, `cycle ${fr(from + Math.min(vis, cyc + 1) - 1)}`], 'même règle partout, à chaque cycle', C.fg);
     },
   },
