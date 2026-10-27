@@ -7,6 +7,7 @@ import { canvasStage } from '@coursekit/ui';
 import { fr, pct } from '@coursekit/core';
 import { GRID, GRID_OUTCOME, MAZE_OUTCOME, mazeOf, trialsOf, type GridRun, type MazeRun } from './model.ts';
 import { COL, drawGrid } from './diagrams.ts';
+import { CC } from '@coursekit/diagrams';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -42,7 +43,7 @@ export const stage = () => canvasStage({
       const f = r.frames[k];
       for (let i = 0; i < S * S; i++) {
         const st = f[i];
-        ctx.fillStyle = r.maze.wall[i] ? COL.wall : i === r.maze.ends[0] || i === r.maze.ends[1] ? COL.end : st === 1 ? (r.solvedAt > 0 && k >= r.solvedAt && (r.damageAt < 0 || k < r.damageAt) ? '#5ee0a0' : COL.reached) : st === 2 ? COL.dead : COL.open;
+        ctx.fillStyle = r.maze.wall[i] ? COL.wall : i === r.maze.ends[0] || i === r.maze.ends[1] ? COL.end : st === 1 ? (r.solvedAt > 0 && k >= r.solvedAt && (r.damageAt < 0 || k < r.damageAt) ? CC.green : COL.reached) : st === 2 ? COL.dead : COL.open;
         ctx.fillRect(x + (i % S) * c, top + Math.floor(i / S) * c, Math.ceil(c), Math.ceil(c));
       }
       // with adaptive firing, the cells that fired at this step
@@ -82,7 +83,7 @@ export const stage = () => canvasStage({
         shown.forEach((r, i) => {
           const gx = safe.x + (safe.w - (cols * size + 16)) / 2 + (i % cols) * (size + 16), gy = top + Math.floor(i / cols) * (size + 16);
           drawGrid(ctx, GRID.n, r.frames[k], gx, gy, size);
-          if (k === GRID.D && i === best) { ctx.strokeStyle = '#5ee0a0'; ctx.lineWidth = 3; ctx.strokeRect(gx - 4, gy - 4, size + 8, size + 8); }
+          if (k === GRID.D && i === best) { ctx.strokeStyle = CC.green; ctx.lineWidth = 3; ctx.strokeRect(gx - 4, gy - 4, size + 8, size + 8); }
         });
       }
       const r = runs[K === 1 ? 0 : best];

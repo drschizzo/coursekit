@@ -13,11 +13,8 @@
   --text: #e8eaf0;
   --muted: #8b91a1;
   --faint: #5b6172;
-  --accent: #7c9cff;
-  --accent-2: #b48cff;
-  --good: #5ee0a0;
-  --warn: #ffb35c;
-  --bad: #ff6b7a;
+  /* --accent, --accent-2, --good, --warn, --bad: written by the player from
+     the diagrams' palette (CSS_PALETTE in @coursekit/diagrams) */
   --mono: 'JetBrains Mono', ui-monospace, monospace;
 }
 * { box-sizing: border-box; }
@@ -82,7 +79,7 @@ button { font: inherit; color: inherit; }
   box-shadow: 0 24px 70px rgba(0, 0, 0, .5);
 }
 .c-cap {
-  position: absolute; left: 18px; bottom: 84px; width: 430px; max-height: calc(100% - 180px);
+  position: absolute; left: var(--ck-margin, 18px); bottom: var(--ck-panel-bottom, 84px); width: var(--ck-cap-w, 430px); max-height: calc(100% - 180px);
   padding: 16px 18px 14px; overflow-y: auto;
   transition: opacity .24s, transform .24s;
 }
@@ -103,9 +100,9 @@ button { font: inherit; color: inherit; }
 .tk-c { color: #6f7789; font-style: italic; }
 .tk-k { color: #b48cff; }
 .tk-f { color: #7ddcff; }
-.tk-n { color: #ffb35c; }
+.tk-n { color: var(--warn); }
 .tk-live {
-  color: #ffd79a; border-bottom: 1px dashed #ffb35c; cursor: ew-resize;
+  color: #ffd79a; border-bottom: 1px dashed var(--warn); cursor: ew-resize;
   padding: 0 1px; border-radius: 2px; outline: none;
 }
 .tk-live:hover, .tk-live.drag, .tk-live:focus { background: rgba(255, 179, 92, .18); }
@@ -119,7 +116,7 @@ button { font: inherit; color: inherit; }
 
 /* ---------------------------------------------------------------- diagram */
 .c-diag {
-  position: absolute; right: 18px; bottom: 84px; width: 380px; padding: 8px;
+  position: absolute; right: var(--ck-margin, 18px); bottom: var(--ck-panel-bottom, 84px); width: var(--ck-diag-w, 380px); padding: 8px;
   transition: opacity .3s, transform .3s;
 }
 .c-diag canvas { display: block; width: 100%; height: auto; aspect-ratio: 380 / 236; }
@@ -128,7 +125,7 @@ button { font: inherit; color: inherit; }
 .c-diag.live { box-shadow: 0 0 0 1px var(--accent), 0 24px 70px rgba(0, 0, 0, .5); cursor: crosshair; }
 
 /* ---------------------------------------------------------------- timeline */
-.c-bar { position: absolute; left: 18px; right: 18px; bottom: 16px; display: flex; align-items: center; gap: 12px; }
+.c-bar { position: absolute; left: var(--ck-margin, 18px); right: var(--ck-margin, 18px); bottom: 16px; display: flex; align-items: center; gap: 12px; }
 .c-play {
   width: 36px; height: 36px; flex: none; border-radius: 50%; border: 1px solid var(--cline);
   background: var(--cpanel); backdrop-filter: blur(12px); color: var(--text); cursor: pointer; font-size: 12px;

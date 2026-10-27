@@ -15,7 +15,8 @@
   "dependencies": {
     "@coursekit/core": "*",
     "@coursekit/diagrams": "*",
-    "@coursekit/exercises": "*"
+    "@coursekit/exercises": "*",
+    "@coursekit/toolbox": "*"
   },
   "sideEffects": [
     "*.css"

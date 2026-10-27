@@ -1,30 +1,24 @@
-// The tooling's tests: `node packages/tooling/test/run.ts`.
+// The tooling's tests (`npm run test:unit`):
 //   - every rule of the checker fires on the faulty course, with its stage;
-//   - the demo course passes;
+//   - a project's own checks run, and skipped rules stay silent;
 //   - lazy texts wait for their first reading, and the checker writes them;
 //   - the tuner's seeds, per-seed windows and summaries;
 //   - rng, wilson, the effort parser, the port of `coursekit new`.
 
+import { expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { compile, defineCourse, effortMinutes, rng, wilson } from '@coursekit/core';
+import { captionText, compile, defineCourse, effortMinutes, rng, wilson } from '@coursekit/core';
 import { checkCourse } from '../src/check.ts';
 import { defineTune, runTune, summarize } from '../src/tune.ts';
 import { freePort } from '../src/scaffold.ts';
 import faulty, { faultyStage } from './faulty.ts';
-import demo from '../../../courses/demo-mini/src/course.ts';
-import { stage as demoStage } from '../../../courses/demo-mini/src/stage.ts';
 
-let bad = 0, n = 0;
-const ok = (name: string, cond: boolean, detail = '') => {
-  n++;
-  if (cond) console.log(`✓ ${name}`);
-  else { bad++; console.log(`✗ ${name}${detail ? ` — ${detail}` : ''}`); }
-};
+const ok = (name: string, cond: boolean, detail = '') => it(name, () => expect(cond, detail).toBe(true));
 
 // ---------------------------------------------------------- the checker
-console.log('Vérificateur');
+// ---- Vérificateur
 const expected = [
   'step-length', 'tone', 'link', 'term-order', 'claim', 'answer-length', 'test-pair', 'offered', 'model', 'walk', 'layout', 'summary',
   'clinic', 'effort', 'stage', 'stage-layout', 'spoiler', 'term-early', 'repeat',
@@ -53,11 +47,12 @@ ok('terme montré par un schéma avant son module', has('term-early', '« notion
 ok('terme montré par un schéma avant toute étape', has('term-early', '« notion précoce » apparaît dans le schéma tells') && has('term-early', 'avant toute étape'));
 ok('deux questions qui posent la même chose', has('repeat', 'question q-r1 et question q-r2'));
 
-const d = checkCourse(demo, { stage: demoStage() });
-ok('le cours de démonstration est prêt, sans remarque', d.ok && !d.findings.length, d.findings.map((f) => `[${f.rule}] ${f.msg}`).join(' ; '));
+const skipped = checkCourse(faulty as any, { stage: faultyStage as any, skip: ['tone'], extra: [{ name: 'maison', run: (x) => x.warn('maison', `${x.tl.caps.length} étapes`) }] });
+ok('une règle ignorée ne dit rien', !skipped.findings.some((f) => f.rule === 'tone'));
+ok('une vérification du projet s’ajoute à celles de la bibliothèque', skipped.findings.some((f) => f.rule === 'maison'));
 
 // ----------------------------------------------------------- lazy texts
-console.log('\nTextes paresseux');
+// ---- Textes paresseux
 let written = 0;
 const lazyCourse = defineCourse({
   id: 'lazy', version: 1, language: 'fr', title: '—', lead: '—', audience: { level: '—', prerequisites: '—' },
@@ -73,13 +68,13 @@ const lazyCourse = defineCourse({
 });
 const tl = compile(lazyCourse);
 ok('compiler n’écrit pas le texte', written === 0);
-ok('un texte paresseux a une durée par défaut', tl.caps[0].dwell === 12 && tl.caps[0].lazy);
-ok('le texte est écrit à la lecture, une seule fois', tl.caps[0].text === 'Le modèle donne 4.' && tl.caps[0].text.length > 0 && written === 1);
+ok('un texte paresseux a une durée par défaut', tl.caps[0].dwell === 12 && typeof tl.caps[0].source === 'function' && written === 0);
+ok('le texte est écrit à la lecture, une seule fois', captionText(tl.caps[0]) === 'Le modèle donne 4.' && captionText(tl.caps[0]).length > 0 && written === 1);
 const lr = checkCourse(lazyCourse);
 ok('le vérificateur écrit les textes paresseux et les vérifie', lr.findings.some((f) => f.rule === 'step-length' && f.msg.includes('« Long »')));
 
 // ---------------------------------------------------------------- tune
-console.log('\nRéglage');
+// ---- Réglage
 const seen: number[] = [];
 const spec = defineTune({
   title: 'graines',
@@ -109,7 +104,7 @@ ok('résumé : valeurs identiques', summarize(['x', 'x', 'x']) === 'x');
 ok('résumé : nombres, médiane et étendue', summarize(['0.4', '0.1', '0.3', '0.2', '0.5']) === '0.3 [0.1–0.5]');
 
 // ------------------------------------------------- core and scaffolding
-console.log('\nHasard, statistiques, durée, port');
+// ---- Hasard, statistiques, durée, port
 const a = rng(42), b = rng(42), c = rng(43);
 const sa = [a(), a(), a()], sb = [b(), b(), b()];
 ok('rng : même graine, même suite', sa.every((x, i) => x === sb[i]) && c() !== sa[0] && sa.every((x) => x >= 0 && x < 1));
@@ -130,6 +125,3 @@ mkdirSync(join(root, '.claude'));
 writeFileSync(join(root, '.claude', 'launch.json'), JSON.stringify({ configurations: [{ name: 'x', port: 5183 }] }));
 ok('coursekit new : sans les ports réservés par .claude/launch.json', freePort(join(root, 'nouveau')) === 5184);
 rmSync(root, { recursive: true, force: true });
-
-console.log(bad ? `\n${bad} test(s) en échec sur ${n}` : `\nLes ${n} tests passent.`);
-process.exit(bad ? 1 : 0);

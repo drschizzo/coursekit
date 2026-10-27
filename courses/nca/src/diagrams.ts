@@ -12,7 +12,7 @@ import {
 type Ctx = CanvasRenderingContext2D;
 
 /** The two colours of the constraint grid, and the cell states of the maze. */
-export const COL = { a: '#7c9cff', b: '#ffb35c', wall: '#141822', open: 'rgba(230,234,245,.20)', reached: '#ffb35c', dead: 'rgba(124,156,255,.38)', end: '#e6eaf5' };
+export const COL = { a: CC.blue, b: CC.acc, wall: '#141822', open: 'rgba(230,234,245,.20)', reached: CC.acc, dead: 'rgba(124,156,255,.38)', end: CC.fg };
 
 const val = (e: DiagramEnv, k: string, d: number) => (Number.isFinite(e.v[k]) ? e.v[k] : d);
 

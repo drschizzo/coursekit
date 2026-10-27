@@ -4,13 +4,17 @@
 // the learner before the next step or pause. Leaving a pause moves on to what
 // follows. Taken from avbd's course/index.ts; the Loop Lab calls are replaced
 // by the Stage interface.
+//
+// The compiled timeline never changes; everything a reading does goes
+// through a `Reading` (core), which the panel reads too.
 
 import {
-  Progress, browserStore, compile, createGlossary, diagramVariants, labelsFor,
-  type CourseDef, type DiagramEnv, type ProgressStore, type Rect, type Stage, type Stop, type Vals,
+  Progress, Reading, browserStore, compile, createGlossary, diagramVariants, labelsFor, layoutCss, moduleReview, tr,
+  type DiagramEnv, type ProgressStore, type Rect, type Stage, type Timeline, type Vals,
 } from '@coursekit/core';
-import { CC, DH, DW, TOOL_DIAGRAMS, beginBudget, text } from '@coursekit/diagrams';
-import type { Exercise, WorkshopConfig } from '@coursekit/exercises';
+import { CC, CSS_PALETTE, DH, DW, beginBudget, clearCache, text } from '@coursekit/diagrams';
+import type { Course, Exercise, WorkshopConfig } from '@coursekit/exercises';
+import { TOOL_DIAGRAMS } from '@coursekit/toolbox';
 import { openCapsule } from './capsule.ts';
 import { Home, openGlossary } from './home.ts';
 import { Panel } from './panel.ts';
@@ -32,7 +36,8 @@ const HOLD = 0.02;
 
 export interface CourseHandle {
   /** dev helpers */
-  tl: ReturnType<typeof compile>;
+  tl: Timeline;
+  reading: Reading;
   prog: Progress;
   next(): void;
   prev(): void;
@@ -49,17 +54,18 @@ export interface CourseHandle {
   destroy(): void;
 }
 
-export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: WorkshopConfig }, opts: MountOptions = {}): CourseHandle {
+export function mountCourse(host: HTMLElement, course: Course, opts: MountOptions = {}): CourseHandle {
   const tl = compile(course);
+  const r = new Reading(tl);
   const prog = new Progress(course.id, course.version, opts.store ?? browserStore());
-  const L = labelsFor(course.labels);
+  const L = labelsFor(course.language, course.labels);
   const glossary = createGlossary(course.glossary);
   const capsules = course.toolbox ?? [];
   const capsule = (id: string) => capsules.find((c) => c.id === id);
-  const exercises = (course.exercises ?? []) as Exercise[];
+  const exercises: Exercise[] = course.exercises ?? [];
   const cfg: WorkshopConfig = course.workshop ?? {};
   const stage = opts.stage ?? noStage();
-  tl.stepMode = prog.d.stepMode;
+  r.stepMode = prog.d.stepMode;
 
   const moduleLabel = (i: number) => {
     const m = course.modules[i];
@@ -71,10 +77,10 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
   };
   const diagrams: Record<string, (ctx: CanvasRenderingContext2D, e: DiagramEnv) => void> = { ...TOOL_DIAGRAMS, ...(course.diagrams ?? {}) };
   const draw = (name: string, ctx: CanvasRenderingContext2D, env: DiagramEnv) => {
-    beginBudget(2);
+    beginBudget(2, course.id);
     ctx.clearRect(0, 0, DW, DH);
     const fn = diagrams[name];
-    if (!fn) { text(ctx, `schéma « ${name} » manquant`, DW / 2, DH / 2, CC.dim, 11, 'center'); return; }
+    if (!fn) { text(ctx, tr(L, 'missingDiagram', { name }), DW / 2, DH / 2, CC.dim, 11, 'center'); return; }
     try { fn(ctx, { ...env, model: course.model }); } catch (err) { text(ctx, String(err).slice(0, 70), 10, 20, CC.red, 10); }
   };
 
@@ -89,6 +95,9 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
 
   // ------------------------------------------------------------------ DOM
   host.classList.add('ck-root');
+  // the palette and the panels' places: one source for the theme, the diagrams and the checker
+  const cssVars = { ...CSS_PALETTE, ...layoutCss() };
+  for (const [k, v] of Object.entries(cssVars)) host.style.setProperty(k, v);
   const stageEl = document.createElement('div');
   stageEl.className = 'ck-stage';
   const root = document.createElement('div');
@@ -96,22 +105,24 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
   host.append(stageEl, root);
   stage.mount(stageEl);
 
-  const panel = new Panel(tl, {
+  const setPauses = (on: boolean) => { r.setPauses(on); panel.setPauses(on); };
+
+  const panel = new Panel(r, {
     onSeek: (t) => seek(t),
-    onStop: (st) => { goto(st.t - 0.01); tl.t = st.t; tl.enterStop(st); },
-    onToggle: () => { if (tl.stop || tl.held) return; tl.playing = !tl.playing; },
+    onStop: (st) => { goto(st.t - 0.01); r.t = st.t; r.enterStop(st); },
+    onToggle: () => { if (r.stop || r.held) return; r.playing = !r.playing; },
     onResume: () => resumeStop(),
     onNext: () => next(),
     onPrev: () => prev(),
-    onPauses: (on) => { tl.pauses = on; panel.setPauses(on); if (!on && tl.stop && tl.stop.kind !== 'card' && tl.stop.kind !== 'test') tl.resume(); },
-    onStepMode: (on) => { tl.stepMode = on; tl.held = false; tl.playing = true; prog.setStepMode(on); panel.setStepMode(on); },
-    onLive: (key, v, until) => liveEdit(key, v, until),
+    onPauses: setPauses,
+    onStepMode: (on) => { r.stepMode = on; r.held = false; r.playing = true; prog.setStepMode(on); panel.setStepMode(on); },
+    onLive: (key, v, until) => { r.editLive(key, v, until, { title: L.liveTitle, prompt: L.livePrompt }); },
     onCard: (st) => home.showCard(st),
     onQuiz: (id, ok, conf) => prog.answer(id, ok, conf),
-    onMission: (id) => { prog.mission(id); toast('Expérience terminée ✓'); },
+    onMission: (id) => { prog.mission(id); toast(L.experimentDone); },
     onPredict: (id, i) => prog.predicted(id, i),
     onExplain: (id, patch) => prog.explained(id, patch),
-    onReview: (st) => pickReview(st),
+    onReview: (st) => moduleReview(tl, prog, st.module),
     onMenu: () => openMenu(),
     onLab: (id) => showLab(id),
     onTest: (kind) => showTest(kind),
@@ -121,7 +132,7 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
     onViewReset: () => { stage.resetView?.(); panel.setViewFree(false); },
     explainText: (id) => prog.d.explain[id]?.text ?? '',
     labStatus: (id) => {
-      if (id === 'assembly') return { title: cfg.assembly?.title ?? 'Assemblage', done: !!prog.d.code.assembly?.done };
+      if (id === 'assembly') return { title: cfg.assembly?.title ?? L.assembly, done: !!prog.d.code.assembly?.done };
       const c = exercises.find((x) => x.id === id);
       return { title: c?.title ?? id, done: !!prog.d.code[id]?.done };
     },
@@ -134,8 +145,8 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
     onClose: () => {
       home.closeHome(); home.hideCard();
       if (mode !== 'tour') { startTour(prog.d.lastT || 0); return; }
-      if (tl.stop?.kind === 'card') { resumeStop(); return; }
-      tl.resume(); tl.playing = menuWasPlaying || tl.stepMode;
+      if (r.stop?.kind === 'card') { resumeStop(); return; }
+      r.resume(); r.playing = menuWasPlaying || r.stepMode;
     },
     onLab: (id) => showLab(id),
     onCapsule: (id) => showCapsule(id),
@@ -160,9 +171,9 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
 
   /** Shows the scene the current time calls for; re-runs it when its settings change. */
   function syncStage(force = false): void {
-    const ev = tl.sceneAt(tl.t);
+    const ev = tl.sceneAt(r.t);
     const key = ev?.key ?? null;
-    const vals = tl.stageVals(tl.t);
+    const vals = r.stageVals(r.t);
     if (!key) return;
     if (force || key !== curScene) {
       curScene = key;
@@ -193,15 +204,15 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
   function safeArea(): Rect {
     const S = stageEl.getBoundingClientRect();
     if (!S.width || mode !== 'tour') return { x: 0, y: 0, w: S.width, h: S.height };
-    const r = panel.regions();
-    if (r.room.height) return { x: r.room.left - S.left, y: r.room.top - S.top, w: r.room.width, h: r.room.height };
-    const top = Math.max(S.top, ...r.tops.map((b) => b.bottom)) + 8;
-    const bottom = Math.min(S.bottom, r.bar.height ? r.bar.top : S.bottom) - 8;
-    const left = r.cap.width ? r.cap.right + 12 : S.left;
-    const right = r.diag.width ? r.diag.left - 12 : S.right;
+    const g = panel.regions();
+    if (g.room.height) return { x: g.room.left - S.left, y: g.room.top - S.top, w: g.room.width, h: g.room.height };
+    const top = Math.max(S.top, ...g.tops.map((b) => b.bottom)) + 8;
+    const bottom = Math.min(S.bottom, g.bar.height ? g.bar.top : S.bottom) - 8;
+    const left = g.cap.width ? g.cap.right + 12 : S.left;
+    const right = g.diag.width ? g.diag.left - 12 : S.right;
     if (right - left >= Math.min(180, 0.3 * S.width)) return { x: left - S.left, y: top - S.top, w: right - left, h: bottom - top };
     // the text panel grows with its text: use a fixed share of the height, not its top
-    const low = Math.min(S.top + S.height * 0.45, r.diag.height ? r.diag.top - 8 : bottom);
+    const low = Math.min(S.top + S.height * 0.45, g.diag.height ? g.diag.top - 8 : bottom);
     return { x: 8, y: top - S.top, w: S.width - 16, h: Math.max(80, low - top) };
   }
   let lastSafe: Rect | null = null;
@@ -221,70 +232,70 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
   /** Jump on the timeline: pauses after t are asked again. */
   function seek(t: number): void {
     t = Math.min(tl.duration - 0.01, Math.max(0, t));
-    tl.resetStops(t);
-    tl.t = t;
-    tl.playing = true;
-    tl.held = false;
+    r.resetStops(t);
+    r.t = t;
+    r.playing = true;
+    r.held = false;
     home.hideCard();
     syncStage(true);
   }
 
   /** Move to another step without forgetting the pauses already done. */
   function goto(t: number): void {
-    const t0 = tl.t;
+    const t0 = r.t;
     t = Math.min(tl.duration - 0.01, Math.max(0, t));
-    tl.stop = null;
-    tl.t = t;
-    tl.playing = true;
-    tl.held = false;
+    r.stop = null;
+    r.t = t;
+    r.playing = true;
+    r.held = false;
     home.hideCard();
     trackProgress(t0, t);
     syncStage();
   }
 
   function next(): void {
-    if (tl.stop) return;
-    const nc = tl.nextStepT(tl.t);
-    const st = tl.stopBetween(tl.t, nc ?? tl.duration);
-    if (st) { goto(st.t); tl.enterStop(st); return; }
+    if (r.stop) return;
+    const nc = tl.nextStepT(r.t);
+    const st = r.stopBetween(r.t, nc ?? tl.duration);
+    if (st) { goto(st.t); r.enterStop(st); return; }
     if (nc == null) { finish(); return; }
     goto(nc + 0.001);
   }
 
   function prev(): void {
-    if (tl.stop) tl.stop = null;
-    goto(tl.prevStepT(tl.t) + 0.001);
+    if (r.stop) r.stop = null;
+    goto(tl.prevStepT(r.t) + 0.001);
   }
 
   /** Leaving a pause: in step-by-step reading, go straight on to what follows. */
   function resumeStop(): void {
-    const st = tl.stop;
+    const st = r.stop;
     if (!st) return;
     if (st.kind === 'card') home.hideCard();
-    tl.resume();
-    if (tl.stepMode && !st.id.startsWith('live-')) next();
+    r.resume();
+    if (r.stepMode && !r.isLive(st)) next();
   }
 
   function finish(): void {
-    trackProgress(tl.t, tl.duration);
+    trackProgress(r.t, tl.duration);
     prog.seen(tl.chapters.length - 1);
-    tl.t = tl.duration - 0.01;
-    tl.playing = false;
-    tl.held = false;
+    r.t = tl.duration - 0.01;
+    r.playing = false;
+    r.held = false;
     openMenu();
   }
 
   function startTour(t: number): void {
     mode = 'tour';
     panel.show(true);
-    panel.setPauses(tl.pauses);
-    panel.setStepMode(tl.stepMode);
+    panel.setPauses(r.pauses);
+    panel.setStepMode(r.stepMode);
     seek(t);
   }
 
   function openMenu(): void {
-    menuWasPlaying = tl.playing;
-    tl.playing = false;
+    menuWasPlaying = r.playing;
+    r.playing = false;
     home.openHome(mode === 'tour');
   }
 
@@ -292,27 +303,29 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
 
   function withOverlay(open: (done: () => void) => void): void {
     overlay++;
-    const was = tl.playing;
-    tl.playing = false;
+    const was = r.playing;
+    r.playing = false;
     open(() => {
       overlay = Math.max(0, overlay - 1);
-      if (mode === 'tour' && !home.open && !tl.stop) tl.playing = was || tl.held;
+      if (mode === 'tour' && !home.open && !r.stop) r.playing = was || r.held;
       panel.refreshStop();
       if (home.open) home.openHome(mode === 'tour');
     });
   }
   function showLab(id?: string): void {
     if (!exercises.length) return;
-    withOverlay((done) => openWorkshop(root, { exercises, cfg, prog, moduleTitle: (m) => { const i = course.modules.findIndex((x) => x.id === m); return `${moduleLabel(i)} · ${course.modules[i]?.title ?? m}`; } }, done, id));
+    const moduleTitle = (m: string) => { const i = course.modules.findIndex((x) => x.id === m); return `${moduleLabel(i)} · ${course.modules[i]?.title ?? m}`; };
+    withOverlay((done) => openWorkshop(root, { exercises, cfg, prog, labels: L, moduleTitle }, done, id));
   }
   function showCapsule(id: string): void {
     const c = capsule(id);
     if (!c) return;
-    withOverlay((done) => openCapsule(root, c, glossary, draw, { onDone: (k) => { prog.tool(k); toast('Fiche acquise ✓'); }, onClose: done }));
+    withOverlay((done) => openCapsule(root, c, glossary, L, draw, { onDone: (k) => { prog.tool(k); toast(L.capsuleDone); }, onClose: done }));
   }
   function showTest(kind: 'pre' | 'post'): void {
-    if (!course.tests) return;
-    withOverlay((done) => openTest(root, kind, course.tests!, capsules, {
+    const tests = course.tests;
+    if (!tests) return;
+    withOverlay((done) => openTest(root, kind, tests, capsules, L, {
       pre: prog.d.tests.pre,
       onDone: (k, rec) => prog.test(k, rec),
       onCapsule: (id) => setTimeout(() => showCapsule(id), 0),
@@ -320,45 +333,7 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
     }));
   }
   function showGlossary(): void {
-    withOverlay((done) => openGlossary(root, glossary, (id) => capsule(id)?.title ?? null, (id) => setTimeout(() => showCapsule(id), 0), done));
-  }
-
-  // ------------------------------------------------------------------ review
-
-  /** Up to three questions from earlier modules: due ones first, then never answered, then the oldest. */
-  function pickReview(st: Stop): Stop[] {
-    const mod = st.module ?? 0;
-    const pool = tl.bank.filter((q) => (q.quiz?.module ?? 0) < mod);
-    if (!pool.length) return [];
-    const ids = pool.map((q) => q.id);
-    const chosen: string[] = prog.due(ids).slice(0, 3);
-    for (const id of ids) if (chosen.length < 3 && !(id in prog.d.rev) && !chosen.includes(id)) chosen.push(id);
-    const rest = ids.filter((id) => !chosen.includes(id)).sort((a, b) => (prog.d.rev[a]?.next ?? 0) - (prog.d.rev[b]?.next ?? 0));
-    while (chosen.length < 3 && rest.length) chosen.push(rest.shift()!);
-    prog.newSession();
-    return chosen.map((id) => pool.find((q) => q.id === id)!).filter(Boolean);
-  }
-
-  /** A value edited straight in the displayed code pauses the course on it. */
-  function liveEdit(key: string, v: number, until: number): void {
-    let st = tl.stop;
-    if (!st) {
-      st = {
-        t: tl.t, until: Math.max(until, tl.t + 0.5), kind: 'try', id: `live-${key}-${tl.t.toFixed(1)}`,
-        title: 'Modifiez la valeur',
-        prompt: 'La visite attend pendant que vous essayez différentes valeurs. Faites glisser les valeurs soulignées et observez le résultat. Vos réglages restent actifs jusqu’à l’étape suivante.',
-        controls: [], ov: {}, visited: true,
-      };
-      const base = tl.eval(tl.t);
-      st.ov[key] = base[key] ?? v;
-      tl.stops.push(st);
-      tl.stops.sort((a, b) => a.t - b.t);
-      tl.stop = st;
-      tl.playing = false;
-      tl.held = false;
-      tl.ptr = null;
-    }
-    st.ov[key] = v;
+    withOverlay((done) => openGlossary(root, glossary, L, (id) => capsule(id)?.title ?? null, (id) => setTimeout(() => showCapsule(id), 0), done));
   }
 
   // -------------------------------------------------------------- the clock
@@ -368,32 +343,32 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
     const now = performance.now();
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    if (home.open || overlay) { if (mode === 'tour') panel.update(tl.t, tl.eval(tl.t), false); return; }
+    if (home.open || overlay) { if (mode === 'tour') panel.update(r.t, r.eval(r.t), false); return; }
     if (mode !== 'tour') return;
-    if (tl.playing && !tl.stop && !tl.held) {
-      const t0 = tl.t;
+    if (r.playing && !r.stop && !r.held) {
+      const t0 = r.t;
       let t1 = t0 + dt;
-      if (tl.stepMode) {
+      if (r.stepMode) {
         const nc = tl.nextStepT(t0) ?? tl.duration;
-        const st = tl.stopBetween(t0, nc);
+        const st = r.stopBetween(t0, nc);
         const hold = Math.min(nc, st ? st.t : Infinity) - HOLD;
-        if (t1 >= hold) { t1 = Math.max(t0, hold); tl.held = true; }
-        tl.t = t1;
+        if (t1 >= hold) { t1 = Math.max(t0, hold); r.held = true; }
+        r.t = t1;
         trackProgress(t0, t1);
       } else {
-        const st = tl.stopBetween(t0, t1);
-        if (st) { tl.t = st.t; tl.enterStop(st); } else tl.t = t1;
-        trackProgress(t0, tl.t);
-        if (!st && tl.t >= tl.duration) finish();
+        const st = r.stopBetween(t0, t1);
+        if (st) { r.t = st.t; r.enterStop(st); } else r.t = t1;
+        trackProgress(t0, r.t);
+        if (!st && r.t >= tl.duration) finish();
       }
     }
-    if (tl.stop || tl.held) tl.extra += dt;
-    prog.setT(tl.t);
+    if (r.stop || r.held) r.extra += dt;
+    prog.setT(r.t);
     syncLayout();
     syncStage();
-    panel.update(tl.t, tl.eval(tl.t), tl.playing);
+    panel.update(r.t, r.eval(r.t), r.playing);
     const s = stage.status();
-    panel.setBadge(s.busy ? `${s.label} · calcul${s.progress != null ? ` ${Math.round(s.progress * 100)} %` : ''}` : s.label, s.busy ? 'baking' : '');
+    panel.setBadge(s.busy ? `${s.label} · ${L.computing}${s.progress != null ? ` ${Math.round(s.progress * 100)} %` : ''}` : s.label, s.busy ? 'baking' : '');
   }
 
   function trackProgress(t0: number, t1: number): void {
@@ -407,27 +382,28 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
     if (overlay) return;
     const tgt = ev.target as HTMLElement | null;
     if (tgt && (tgt.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(tgt.tagName))) return;
-    if (ev.key === 'Escape') { if (home.open && mode === 'tour') { home.closeHome(); tl.playing = menuWasPlaying || tl.stepMode; } ev.preventDefault(); return; }
+    if (ev.key === 'Escape') { if (home.open && mode === 'tour') { home.closeHome(); r.playing = menuWasPlaying || r.stepMode; } ev.preventDefault(); return; }
     if (home.open) return;
     if (ev.key === 'm' || ev.key === 'M') { openMenu(); return; }
     if (ev.key === 'l' || ev.key === 'L') { showLab(); return; }
     if (ev.key === 'g' || ev.key === 'G') { showGlossary(); return; }
     const qi = ['1', '2', '3', '4'].indexOf(ev.key);
-    if (qi >= 0 && tl.stop) { panel.answer(qi); return; }
+    if (qi >= 0 && r.stop) { panel.answer(qi); return; }
     if (ev.code === 'Space') {
-      if (tl.stop) resumeStop();
-      else if (tl.stepMode) next();
-      else tl.playing = !tl.playing;
+      if (r.stop) resumeStop();
+      else if (r.stepMode) next();
+      else r.playing = !r.playing;
       ev.preventDefault();
       return;
     }
-    if (ev.key === 'Enter' && tl.stop?.kind === 'card') { resumeStop(); ev.preventDefault(); return; }
-    if (ev.key === 'ArrowRight') { if (!tl.stop) next(); ev.preventDefault(); }
+    if (ev.key === 'Enter' && r.stop?.kind === 'card') { resumeStop(); ev.preventDefault(); return; }
+    if (ev.key === 'ArrowRight') { if (!r.stop) next(); ev.preventDefault(); }
     if (ev.key === 'ArrowLeft') { prev(); ev.preventDefault(); }
   }
 
   // the learner moving the stage's view (a drag) is offered a way back
-  stageEl.addEventListener('pointerdown', () => { if (stage.resetView) panel.setViewFree(true); }, true);
+  const onStageDown = () => { if (stage.resetView) panel.setViewFree(true); };
+  stageEl.addEventListener('pointerdown', onStageDown, true);
 
   window.addEventListener('keydown', onKey, true);
   rafId = requestAnimationFrame(frame);
@@ -453,7 +429,7 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
       const head = document.createElement('div');
       head.className = 'ck-shots-head';
       const variants = diagramVariants(tl);
-      head.textContent = `${variants.length} schémas · valeurs du fil du cours et bornes des expériences · Échap pour fermer`;
+      head.textContent = tr(L, 'shotsHead', { n: variants.length });
       box.append(head);
       for (const d of variants) {
         const fig = document.createElement('figure');
@@ -471,22 +447,32 @@ export function mountCourse(host: HTMLElement, course: CourseDef & { workshop?: 
   function gotoStep(chapter: number, step = 0): void {
     const ch = tl.chapters[chapter];
     if (!ch) return;
-    const end = chapter + 1 < tl.chapters.length ? tl.chapters[chapter + 1].t : tl.duration;
-    const caps = tl.caps.filter((c) => c.t >= ch.t - 1e-3 && c.t < end - 1e-3);
+    const caps = tl.capsOfChapter(chapter);
     const t = (caps[Math.min(step, caps.length - 1)]?.t ?? ch.t) + 0.01;
     home.closeHome(); home.hideCard();
     if (mode !== 'tour') startTour(t); else seek(t);
-    for (const st of tl.stops) if (st.t < t) st.visited = true;
+    r.visitBefore(t);
   }
 
   const handle: CourseHandle = {
-    tl, prog, next, prev,
+    tl, reading: r, prog, next, prev,
     chapter: (i) => gotoStep(i, 0),
     list: () => tl.chapters.map((c, i) => `${i}  M${c.module} · ${c.part} · ${c.title}`).join('\n'),
     goto: gotoStep,
-    pauses: (on) => { tl.pauses = on; panel.setPauses(on); if (!on && tl.stop && tl.stop.kind !== 'card' && tl.stop.kind !== 'test') tl.resume(); },
+    pauses: setPauses,
     render, shots,
-    destroy: () => { cancelAnimationFrame(rafId); window.removeEventListener('keydown', onKey, true); stage.dispose(); host.replaceChildren(); },
+    destroy: () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(stageTimer);
+      clearTimeout(toastTimer);
+      window.removeEventListener('keydown', onKey, true);
+      stageEl.removeEventListener('pointerdown', onStageDown, true);
+      stage.dispose();
+      clearCache(course.id);
+      host.replaceChildren();
+      for (const k of Object.keys(cssVars)) host.style.removeProperty(k);
+      host.classList.remove('ck-root');
+    },
   };
   if (opts.dev && new URLSearchParams(location.search).has('shots')) shots();
   return handle;

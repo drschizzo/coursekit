@@ -11,12 +11,13 @@ import {
   type Contest, type DustRun, type GateRun, type GrowRun, type HeatRun, type Row, type Theory,
 } from './model.ts';
 import { THEORY_NAME } from './diagrams.ts';
+import { CC } from '@coursekit/diagrams';
 
 type Ctx = CanvasRenderingContext2D;
 type V = Record<string, number>;
 
 const BG = '#0b0f1a';
-const C = { fg: 'rgba(230,234,245,.85)', dim: 'rgba(230,234,245,.5)', acc: '#ffb35c', blue: '#7c9cff', green: '#5ee0a0', red: '#ff6b7a', violet: '#b48cff' };
+const C = { fg: 'rgba(230,234,245,.85)', dim: 'rgba(230,234,245,.5)', acc: CC.acc, blue: CC.blue, green: CC.green, red: CC.red, violet: CC.violet };
 
 function background(ctx: Ctx, w: number, h: number): void { ctx.fillStyle = BG; ctx.fillRect(0, 0, w, h); }
 

@@ -10,8 +10,12 @@
 // REVIEW, TEST, CARD), without the timestamps.
 
 import { labelsFor, type LabelSet } from './labels.ts';
-import { Timeline, type Caption, type Stop } from './timeline.ts';
-import type { Control, CourseDef, ExperimentSpec, Goal, QuizSpec, StepOptions, Text, Vals } from './types.ts';
+import { placeAnswer } from './questions.ts';
+import { Timeline, type Caption, type Stop, type TryStop } from './timeline.ts';
+import type { Control, CourseDef, ExerciseBase, ExperimentSpec, QuizSpec, StepOptions, Text, Vals } from './types.ts';
+
+/** A pause as the builder writes it: the time and the module are its business. */
+type StopDraft = Stop extends infer S ? (S extends Stop ? Omit<S, 't' | 'module' | 'until'> : never) : never;
 
 export interface ClinicCase {
   id: string;
@@ -83,7 +87,7 @@ export const dwellOf = (text: string): number => Math.max(6, Math.min(20, Math.r
 export const LAZY_DWELL = 12;
 
 export function compile(course: CourseDef): Timeline {
-  const L: LabelSet = labelsFor(course.labels);
+  const L: LabelSet = labelsFor(course.language, course.labels);
   const tl = new Timeline(course.defaults ?? {}, course.stageKeys ?? []);
   const modIndex = new Map(course.modules.map((m, i) => [m.id, i]));
   const kindOf = (i: number) => course.modules[i]?.kind ?? 'core';
@@ -101,8 +105,8 @@ export function compile(course: CourseDef): Timeline {
   let diag: { name: string; arg?: string; big?: boolean } | null = null;
   let diagOpen: { t0: number; name: string; arg?: string; big?: boolean } | null = null;
   /** experiments waiting for their `until` (end of chapter or next step) */
-  const holdChapter: Stop[] = [];
-  let holdStep: Stop[] = [];
+  const holdChapter: TryStop[] = [];
+  let holdStep: TryStop[] = [];
   const ids = new Set<string>();
 
   const fail = (msg: string): never => { throw new Error(`[${course.id}] ${msg}`); };
@@ -115,10 +119,11 @@ export function compile(course: CourseDef): Timeline {
     last.pauses++;
     return t;
   };
-  const push = (st: Omit<Stop, 't' | 'until' | 'ov' | 'controls'> & { controls?: Control[] }): Stop => {
+  const push = <D extends StopDraft>(draft: D): D & { t: number; module: number; until: number } => {
     const t = pauseT();
-    const s: Stop = { controls: [], ...st, t, until: t, ov: {} };
-    tl.stops.push(s);
+    // `until` only means something for an experiment; the others end where they start
+    const s = { ...draft, t, module: mod, until: t };
+    tl.stops.push(s as Stop);
     return s;
   };
   const closeDiag = (t: number) => {
@@ -126,10 +131,10 @@ export function compile(course: CourseDef): Timeline {
     diagOpen = null;
   };
   const quizStop = (id: string, q: QuizSpec, review: boolean) => {
-    push({ kind: 'quiz', id: uniq(id), title: 'Question', quiz: { ...q, module: 0, review } });
+    push({ kind: 'quiz', id: uniq(id), title: L.quizTitle, quiz: { ...q, module: mod, review } });
   };
   const card = (from: number, to: number | null) => {
-    push({ kind: 'card', id: `card${from}`, title: 'Module', from, to });
+    push({ kind: 'card', id: `card${from}`, title: L.cardTitle, from, to });
   };
 
   const c: Builder = {
@@ -173,9 +178,7 @@ export function compile(course: CourseDef): Timeline {
 
     step(title, text, o = {}) {
       if (!inChapter) fail(`étape « ${title} » hors d’un chapitre`);
-      const write = typeof text === 'function' ? text : null;
-      const lazy = write != null;
-      const dwell = o.dwell ?? (write ? LAZY_DWELL : dwellOf(text as string));
+      const dwell = o.dwell ?? (typeof text === 'function' ? LAZY_DWELL : dwellOf(text));
       const t = cursor;
       for (const s of holdStep) s.until = t;
       holdStep = [];
@@ -185,15 +188,10 @@ export function compile(course: CourseDef): Timeline {
         diagOpen = { t0: t, ...diag };
       } else if (!diag && diagOpen) closeDiag(t);
       const cap: Caption = {
-        t, kicker: part === chap ? part : `${part} · ${chap}`, title, text: write ? '' : (text as string), lazy,
+        t, kicker: part === chap ? part : `${part} · ${chap}`, title, source: text,
         note: o.note ?? '', code: o.code ?? '', hud: o.hud ?? null, layers: o.layers ?? 0, tools: o.tools ?? [], dwell,
         claims: o.claims ?? [],
       };
-      if (write) {
-        // written on first reading, then kept
-        let s: string | undefined;
-        Object.defineProperty(cap, 'text', { enumerable: true, get: () => (s ??= write()) });
-      }
       tl.caps.push(cap);
       last = { t, dwell, pauses: 0 };
       cursor = t + dwell;
@@ -219,10 +217,7 @@ export function compile(course: CourseDef): Timeline {
 
     question(id, question, choices, explain, opt = {}) {
       if (choices.length < 2) fail(`question ${id} : au moins deux choix`);
-      const pos = place++ % choices.length;
-      const others = choices.slice(1);
-      const shown = [...others.slice(0, pos), choices[0], ...others.slice(pos)];
-      quizStop(id, { question, kind: 'choice', choices: shown, answer: pos, explain }, opt.review ?? kindOf(mod) !== 'exam');
+      quizStop(id, placeAnswer(question, choices, explain, place++), opt.review ?? kindOf(mod) !== 'exam');
     },
 
     numeric(id, question, value, explain, opt = {}) {
@@ -238,7 +233,7 @@ export function compile(course: CourseDef): Timeline {
       if (spec.goals?.length && !spec.conclusion) fail(`expérience « ${spec.title} » : une conclusion est requise`);
       const s = push({
         kind: 'try', id: uniq(spec.id ?? `try-${spec.title}`), title: spec.title, prompt: spec.prompt,
-        controls: spec.controls ?? [], goals: spec.goals as Goal[] | undefined, seq: spec.seq, diag: spec.diag,
+        controls: spec.controls ?? [], goals: spec.goals, seq: spec.seq, diag: spec.diag,
         predict: spec.predict, conclusion: spec.conclusion,
       });
       (spec.hold === 'step' ? holdStep : holdChapter).push(s);
@@ -249,11 +244,11 @@ export function compile(course: CourseDef): Timeline {
     },
 
     exercise(id, prompt) {
-      push({ kind: 'lab', id: uniq(`lab-${id}`), title: 'Atelier', lab: id, prompt });
+      push({ kind: 'lab', id: uniq(`lab-${id}`), title: L.labTitle, lab: id, prompt });
     },
 
     test(kind, prompt) {
-      push({ kind: 'test', id: uniq(`test-${kind}`), title: kind === 'pre' ? 'Test de départ' : 'Test final', test: kind, prompt });
+      push({ kind: 'test', id: uniq(`test-${kind}`), title: kind === 'pre' ? L.testPre : L.testPost, test: kind, prompt });
     },
 
     clinicCase(k) {
@@ -269,7 +264,7 @@ export function compile(course: CourseDef): Timeline {
           afterDiagnosis: true,
           goals: [{ label: k.goal.label, test: ({ v }) => k.goal.test(v) }], conclusion: k.conclusion,
         });
-        tl.stops[tl.stops.length - 1].clinic = { id: k.id, fault: k.fault, symptom: k.symptom };
+        (holdChapter[holdChapter.length - 1]).clinic = { id: k.id, fault: k.fault, symptom: k.symptom };
         c.step(L.clinicJustify, L.clinicJustifyText);
         c.explain(`${k.id}-why`, L.clinicJustifyPrompt, k.justify);
       });
@@ -292,11 +287,12 @@ export function compile(course: CourseDef): Timeline {
   });
   tl.stops.sort((a, b) => a.t - b.t);
   for (const st of tl.stops) {
+    // a module card belongs to the module it closes (or opens, at the start)
     st.module = tl.chapters[tl.chapterAt(st.t)]?.module ?? 0;
-    if (st.quiz) st.quiz.module = st.module;
+    if (st.kind === 'quiz') st.quiz.module = st.module;
   }
   return tl;
 }
 
 /** Identity with type checking: `export default defineCourse({...})`. */
-export const defineCourse = (def: CourseDef): CourseDef => def;
+export const defineCourse = <E extends ExerciseBase = never, W = never>(def: CourseDef<E, W>): CourseDef<E, W> => def;

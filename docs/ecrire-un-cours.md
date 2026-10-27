@@ -161,6 +161,10 @@ export const DIAGRAMS = { forces, … };
   `e.ptr` : le pointeur dans l’espace du schéma, pendant une expérience déclarée `diag: true`.
 - Palette `CC` : orange (`acc`) pour ce qu’on explique, bleu pour la référence, rose pour les
   forces, vert pour ce qui réussit, rouge pour ce qui échoue, `dim` et `faint` pour le décor.
+  Les schémas, la scène et les aperçus de l’atelier prennent ces couleurs dans `CC`, jamais en
+  recopiant leurs valeurs hexadécimales : c’est la même palette que le thème du lecteur. Les
+  couleurs propres au sujet (le ciel, le mur d’un labyrinthe, une population) se nomment dans un
+  objet de couleurs du cours.
 - Tous les nombres passent par `fr`, `dec` ou `pct`.
 - Ne jamais écrire un chiffre à la main : appeler le modèle.
 - Les graduations ne doivent pas tomber sous le libellé d’un axe ; le vérificateur signale les
@@ -202,7 +206,7 @@ signalés. Il faut pour cela que `src/stage.ts` exporte `stage()`, comme ci-dess
 ## 6. La déclaration du cours
 
 ```ts
-export default Object.assign(defineCourse({
+export default defineCourse({
   id: 'fusee', version: 1, language: 'fr',
   title: 'Comment fonctionne une fusée',
   lead: 'Un paragraphe pour la page d’accueil.',
@@ -215,20 +219,27 @@ export default Object.assign(defineCourse({
   defaults: { thrust: 1, payload: 3000, kick: 6 },
   model,
   exercises,
+  workshop,                      // l’atelier : helpers, scénarios, assemblage (section 8)
   rubric: ['Une justification complète décrit le symptôme, la cause et le mécanisme.'],
   content(c) { … },
-}), { workshop });
+});
 ```
 
 - **Modules** : `{ id, title, pitch, goals, summary, kind? }`. `kind` vaut `'core'` (défaut),
   `'exam'` (l’épreuve, hors révisions) ou `'bonus'`. Chaque objectif (`goals`) doit être évalué
   par une question, une expérience ou un exercice ; `summary` est la fiche de synthèse.
-- **`version`** : à augmenter quand le contenu change au point de rendre caduque la progression
-  enregistrée (elle est rangée sous la clé `coursekit:<id>:v<version>`).
+- **`version`** : à augmenter quand le contenu change (étapes ajoutées, chapitres déplacés). La
+  progression est rangée sous la clé `coursekit:<id>` avec la version du contenu : quand elle
+  change, les réponses, les révisions, les expériences et les exercices de l’élève sont gardés,
+  seule la position dans le cours repart du début. C’est pourquoi les identifiants des questions,
+  des expériences et des exercices ne doivent pas changer d’une version à l’autre.
+- **`language`** choisit les textes de l’interface (`fr`, `en` ; le français pour une langue
+  sans dictionnaire), le format des nombres et les tournures interdites du vérificateur.
 - **`audience.effort`** (« trois à quatre heures ») s’affiche à côté du temps estimé ; le
   vérificateur fait une remarque s’ils s’écartent de plus de 15 %.
-- **`labels`** remplace des textes de l’interface ; **`bannedPhrases`** ajoute des tournures
-  interdites à celles du vérificateur.
+- **`labels`** remplace des textes de l’interface (les clés sont celles de `FR`, dans
+  `packages/core/src/labels.ts`) ; **`bannedPhrases`** ajoute des tournures interdites à celles du
+  vérificateur.
 - Les valeurs (`defaults`, `c.set`, `c.stage`, curseurs) sont des nombres. Les clés de
   `stageKeys` sont transmises à la scène ; les autres ne servent qu’aux schémas.
 
@@ -367,12 +378,13 @@ Options : `primm` (lire un code donné, prédire, exécuter, examiner, puis le m
 (remettre les lignes de la solution dans l’ordre avant d’écrire), `preview` (un aperçu en direct),
 `chart` (une courbe comparée après « Vérifier »), `standalone` (exclu de l’assemblage).
 
-`workshop` (passé avec `Object.assign(course, { workshop })`) regroupe les `helpers` mis à
+`workshop` (un champ de `defineCourse`) regroupe les `helpers` mis à
 disposition du code de l’élève, les `scenarios` par défaut et la page d’**assemblage**, où toutes
 les fonctions écrites par l’élève tournent ensemble (`c.exercise('assembly', …)`).
 
 Le vérificateur exige que chaque solution soit acceptée, que chaque point de départ soit refusé
-et que le code PRIMM donné à lire ne soit pas déjà accepté.
+et que le code PRIMM donné à lire ne soit pas déjà accepté. Dans le navigateur, une boucle du
+code de l’élève qui ne se termine pas est arrêtée au bout de 3 secondes, avec un message.
 
 ## 9. Les tests, le glossaire, la boîte à outils
 
@@ -386,8 +398,8 @@ une étape devient une infobulle. `module` est le module qui l’introduit : le 
 qu’il apparaisse avant.
 
 **Boîte à outils.** Des fiches courtes (3 étapes, 2 questions de contrôle) sur les outils dont le
-cours a besoin. `pickCapsules('T4', ['T1', 'Où le cours s’en sert.'])` reprend des fiches de la
-bibliothèque (T1 vecteurs, T2 produit scalaire, T3 produit en croix, T4 dérivée et taux de
+cours a besoin. `pickCapsules('T4', ['T1', 'Où le cours s’en sert.'])`, importé de
+`@coursekit/toolbox`, reprend des fiches de la bibliothèque (T1 vecteurs, T2 produit scalaire, T3 produit en croix, T4 dérivée et taux de
 variation, T5 énergie, T6 minimum d’une fonction, T7 systèmes d’équations, T8 nombres flottants) ;
 un cours ajoute les siennes au même format.
 

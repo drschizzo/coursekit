@@ -8,11 +8,12 @@
 
 import { choice, dec, defineCourse, fr, numeric, pct, type Capsule } from '@coursekit/core';
 import { choiceQ, type Exercise, type WorkshopConfig } from '@coursekit/exercises';
-import { DIAGRAMS, THEORY_NAME, drawHistory, sci } from './diagrams.ts';
+import { DIAGRAMS, drawHistory, sci } from './diagrams.ts';
 import {
   BOOK, TOY, cellOf, contestOf, crossoverBits, dustOf, gardenOf, gateOf, growOf, heatOf, history, machineOf, model,
   reach, reorder, rowKey, secondsPerHour, stepRing, supplyAt, timeRatio, transmitterKinds, tvcOverhead, type CellFn,
 } from './model.ts';
+import { CC } from '@coursekit/diagrams';
 
 const near = (a: number, b: number, rel = 0.03) => Math.abs(a - b) <= Math.abs(b) * rel;
 
@@ -22,7 +23,7 @@ const G30 = gardenOf(30, 10), G184 = gardenOf(184, 12);
 const CELLS = supplyAt(0) * BOOK.cellsPerProc;
 const SPH = secondsPerHour(BOOK.slowNested), OVER = tvcOverhead();
 const RATIO = timeRatio(), DAY = RATIO / 365.25;
-const M8 = machineOf(8, false), M16 = machineOf(16, false), MG = machineOf(8, true);
+const M8 = machineOf(8, false), M16 = machineOf(16, false);
 const H_NOM = heatOf(1, 1), H_TORUS = heatOf(0, 1), H_CLIN = heatOf(0.1, 1), H_HOT = heatOf(1, 4);
 const LATE4 = growOf(4, 1);
 const CROSS = crossoverBits();
@@ -91,27 +92,27 @@ const previewRuns = new WeakMap<Function, number[][] | null>();
 
 function rulePreview(ctx: CanvasRenderingContext2D, fn: Function | null): void {
   ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  if (!fn) { ctx.fillStyle = '#7c9cff'; ctx.fillText('écrivez votre fonction', 20, 20); return; }
+  if (!fn) { ctx.fillStyle = CC.blue; ctx.fillText('écrivez votre fonction', 20, 20); return; }
   if (!previewRuns.has(fn)) { try { previewRuns.set(fn, [30, 90, 184].map((r) => traceOf(fn as CellFn, r))); } catch { previewRuns.set(fn, null); } }
   const runs = previewRuns.get(fn);
-  if (!runs) { ctx.fillStyle = '#ff6b7a'; ctx.fillText('votre fonction lève une erreur', 20, 20); return; }
+  if (!runs) { ctx.fillStyle = CC.red; ctx.fillText('votre fonction lève une erreur', 20, 20); return; }
   [30, 90, 184].forEach((r, i) => {
     const rows = history(r, 31, 0, 24, fn as CellFn);
     drawHistory(ctx, rows, 16 + i * 120, 36, 3.4);
-    ctx.fillStyle = '#e6eaf5'; ctx.fillText(`règle ${r}`, 16 + i * 120, 24);
+    ctx.fillStyle = CC.fg; ctx.fillText(`règle ${r}`, 16 + i * 120, 24);
   });
 }
 
 function assemblyPreview(ctx: CanvasRenderingContext2D, cell: CellFn, sort: (f: string[], n: (f: string) => string) => number[]): void {
   ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   let cards: string[], order: number[];
-  try { cards = cardsOf(30, 3, cell); order = sort(cards, nextOf(30, cell)); } catch { ctx.fillStyle = '#ff6b7a'; ctx.fillText('une de vos fonctions lève une erreur', 20, 20); return; }
-  ctx.fillStyle = '#e6eaf5'; ctx.fillText('cartes battues', 20, 22); ctx.fillText('remises en ordre', 200, 22);
+  try { cards = cardsOf(30, 3, cell); order = sort(cards, nextOf(30, cell)); } catch { ctx.fillStyle = CC.red; ctx.fillText('une de vos fonctions lève une erreur', 20, 20); return; }
+  ctx.fillStyle = CC.fg; ctx.fillText('cartes battues', 20, 22); ctx.fillText('remises en ordre', 200, 22);
   const draw = (keys: string[], x: number) => keys.forEach((k, j) => { for (let i = 0; i < k.length; i++) if (k[i] === '1') { ctx.fillStyle = `hsl(${30 + (SHUFFLE[cards.indexOf(k)] / 20) * 200},75%,62%)`; ctx.fillRect(x + i * 6, 32 + j * 9, 5, 7); } });
   draw(cards, 20);
   draw(order.map((j) => cards[j] ?? ''), 200);
   const ok = order.length === 20 && order.every((j, i) => SHUFFLE[j] === i);
-  ctx.fillStyle = ok ? '#5ee0a0' : '#ff6b7a'; ctx.fillText(ok ? 'l’histoire est retrouvée' : 'l’ordre n’est pas encore le bon', 200, 222);
+  ctx.fillStyle = ok ? CC.green : CC.red; ctx.fillText(ok ? 'l’histoire est retrouvée' : 'l’ordre n’est pas encore le bon', 200, 222);
 }
 
 const exercises: Exercise[] = [
@@ -270,7 +271,8 @@ const workshop: WorkshopConfig = {
 
 // --------------------------------------------------------------- course
 
-const course = defineCourse({
+export default defineCourse({
+  workshop,
   id: 'permutants', version: 1, language: 'fr',
   title: 'Les mondes de La Cité des permutants',
   lead: 'Dans la seconde partie du roman de Greg Egan, Maria se réveille dans l’Élysium, un univers d’ordinateurs bâti sur un automate cellulaire. Une partie de cet univers fait tourner le Cosmoplexe, une physique jouet où une civilisation est apparue. Ce cours construit des versions miniatures de ces mondes, pour comprendre ce qu’ils sont, comment ils tiennent, et pourquoi l’explication des Lambertiens finit par l’emporter sur celle de leurs créateurs.',
@@ -742,5 +744,4 @@ const course = defineCourse({
   },
 });
 
-export default Object.assign(course, { workshop });
 

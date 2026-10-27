@@ -3,7 +3,8 @@
 // so that the library can be tested on it.
 
 import { choice, defineCourse, numeric } from '@coursekit/core';
-import { pickCapsules } from '@coursekit/diagrams';
+import { CC } from '@coursekit/diagrams';
+import { pickCapsules } from '@coursekit/toolbox';
 import { choiceQ, type Exercise, type WorkshopConfig } from '@coursekit/exercises';
 import { DIAGRAMS } from './diagrams.ts';
 import { model, simulate, stepRef } from './model.ts';
@@ -38,10 +39,10 @@ const exercises: Exercise[] = [
       modify: 'Modifiez ce code : mettez d’abord la vitesse à jour, avec le frottement.',
     },
     preview(ctx, fn) {
-      ctx.fillStyle = '#7c9cff'; ctx.font = '11px Inter, sans-serif';
+      ctx.fillStyle = CC.blue; ctx.font = '11px Inter, sans-serif';
       if (!fn) { ctx.fillText('écrivez votre fonction', 20, 20); return; }
       const r = simulate({ k: 0.5 }, fn as never);
-      ctx.strokeStyle = '#ffb35c'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.strokeStyle = CC.acc; ctx.lineWidth = 2; ctx.beginPath();
       r.forEach((s, i) => { const X = 30 + (s.t / 3) * 320, Y = 210 - (s.y / 20) * 180; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
       ctx.stroke();
       ctx.fillText('hauteur de votre balle (k = 0,5)', 30, 20);
@@ -89,7 +90,8 @@ const workshop: WorkshopConfig = {
   },
 };
 
-const course = defineCourse({
+export default defineCourse({
+  workshop,
   id: 'demo-mini', version: 1, language: 'fr',
   title: 'La chute d’un objet',
   lead: 'Un cours jouet pour tester coursekit : comment un programme calcule la chute d’une balle, pas à pas, avec ou sans frottement de l’air.',
@@ -173,5 +175,4 @@ const course = defineCourse({
   },
 });
 
-export default Object.assign(course, { workshop });
 void stepRef;

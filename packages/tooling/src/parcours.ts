@@ -38,7 +38,7 @@ function testItems(title: string, items: TestItem[] | undefined): string[] {
 
 export function parcours(course: CourseDef & { exercises?: unknown[] }, scenes?: Record<string, SceneLike>): string {
   const tl = compile(course);
-  const L = labelsFor(course.labels);
+  const L = labelsFor(course.language, course.labels);
   const screen = screenReader(course, tl, scenes);
   const exercises = (course.exercises ?? []) as Exercise[];
   const out: string[] = [`# ${course.title}`, '', `> ${course.lead}`, ''];

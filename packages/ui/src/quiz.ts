@@ -7,8 +7,8 @@
 // The learner can be asked how sure they were before the answer is shown:
 // confidence is what decides when a question comes back for review.
 
-import { h } from './dom.ts';
-import type { Confidence, QuizSpec } from '@coursekit/core';
+import { fmtValue, parseNumber, toleranceOf, tr, type Confidence, type LabelSet, type QuizSpec } from '@coursekit/core';
+import { esc, h } from './dom.ts';
 
 export type { Confidence, QuizSpec };
 
@@ -27,10 +27,10 @@ export interface QuizOptions {
   head?: string;
 }
 
-const CONF: { label: string; v: Confidence }[] = [
-  { label: 'Sûr de moi', v: 2 },
-  { label: 'J’hésitais', v: 1 },
-  { label: 'Au hasard', v: 0 },
+const CONF: { label: 'confSure' | 'confHesitant' | 'confGuess'; v: Confidence }[] = [
+  { label: 'confSure', v: 2 },
+  { label: 'confHesitant', v: 1 },
+  { label: 'confGuess', v: 0 },
 ];
 
 /** Deterministic shuffle (order questions must not depend on Math.random). */
@@ -49,19 +49,13 @@ function shuffled<T>(xs: T[], seed: number): T[] {
 
 const hash = (s: string) => { let x = 7; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return Math.abs(x); };
 
-export const parseNum = (s: string): number => parseFloat(s.replace(/\s/g, '').replace(',', '.'));
-
-export function fmtNum(v: number): string {
-  return String(+v.toPrecision(6)).replace('.', ',');
-}
-
 /**
  * Renders the question into `el` and returns a function that answers choice
  * questions from the keyboard (index), or null when that does not apply.
  */
-export function renderQuiz(el: HTMLElement, q: QuizSpec, opt: QuizOptions): { key(i: number): void } {
+export function renderQuiz(el: HTMLElement, q: QuizSpec, L: LabelSet, opt: QuizOptions): { key(i: number): void } {
   el.replaceChildren();
-  const head = h('div', 'try-head', `<span class="try-tag quiz">${opt.tag ?? 'Question'}</span>`);
+  const head = h('div', 'try-head', `<span class="try-tag quiz">${esc(opt.tag ?? L.quizTitle)}</span>`);
   if (opt.head) head.append(opt.head);
   const p = h('p', 'quiz-q');
   p.textContent = q.question;
@@ -80,11 +74,11 @@ export function renderQuiz(el: HTMLElement, q: QuizSpec, opt: QuizOptions): { ke
     onReveal?.();
     if (opt.feedback) {
       fb.replaceChildren();
-      const b = h('b', undefined, ok ? 'Bonne réponse.' : 'Ce n’est pas la bonne réponse.');
+      const b = h('b', undefined, esc(ok ? L.right : L.wrong));
       const t = h('p');
       t.textContent = q.explain;
       fb.append(b, t);
-      if (!ok && conf === 2) fb.append(h('p', 'quiz-warn', 'Vous étiez sûr de vous : cette question vous sera reposée plus tard.'));
+      if (!ok && conf === 2) fb.append(h('p', 'quiz-warn', esc(L.wrongButSure)));
       fb.classList.remove('hidden');
       requestAnimationFrame(() => fb.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
     }
@@ -96,9 +90,9 @@ export function renderQuiz(el: HTMLElement, q: QuizSpec, opt: QuizOptions): { ke
     locked = true;
     ok = isOk; given = txt; onReveal = revealFn;
     if (!opt.confidence) { reveal(null); return; }
-    confRow.replaceChildren(h('span', undefined, 'Avant de voir la correction : quel était votre degré de certitude ?'));
+    confRow.replaceChildren(h('span', undefined, esc(L.confAsk)));
     for (const c of CONF) {
-      const b = h('button', 'c-btn', c.label) as HTMLButtonElement;
+      const b = h('button', 'c-btn', esc(L[c.label])) as HTMLButtonElement;
       b.onclick = () => reveal(c.v);
       confRow.append(b);
     }
@@ -130,18 +124,18 @@ export function renderQuiz(el: HTMLElement, q: QuizSpec, opt: QuizOptions): { ke
   } else if (q.kind === 'number') {
     const row = h('div', 'quiz-num');
     const inp = h('input') as HTMLInputElement;
-    inp.type = 'text'; inp.inputMode = 'decimal'; inp.placeholder = 'votre réponse';
-    const unit = h('span', 'quiz-unit', q.unit ?? '');
-    const go = h('button', 'c-btn', 'Valider') as HTMLButtonElement;
+    inp.type = 'text'; inp.inputMode = 'decimal'; inp.placeholder = L.numPlaceholder;
+    const unit = h('span', 'quiz-unit', esc(q.unit ?? ''));
+    const go = h('button', 'c-btn', esc(L.validate)) as HTMLButtonElement;
     const send = () => {
-      const v = parseNum(inp.value);
+      const v = parseNumber(inp.value);
       if (!Number.isFinite(v)) { inp.classList.add('bad'); inp.focus(); return; }
       inp.disabled = true; go.disabled = true;
-      const tol = q.tol ?? Math.max(1e-9, Math.abs(q.value ?? 0) * 0.02);
-      submit(Math.abs(v - (q.value ?? 0)) <= tol, inp.value, () => {
+      const value = q.value ?? 0;
+      submit(Math.abs(v - value) <= toleranceOf(value, q.tol), inp.value, () => {
         if (!opt.feedback) return;
         inp.classList.add(ok ? 'is-right' : 'is-wrong');
-        if (!ok) row.append(h('span', 'quiz-expected', `réponse attendue : ${fmtNum(q.value ?? 0)}${q.unit ? ` ${q.unit}` : ''}`));
+        if (!ok) row.append(h('span', 'quiz-expected', esc(tr(L, 'expectedAnswer', { value: `${fmtValue(value, L.lang)}${q.unit ? ` ${q.unit}` : ''}` }))));
       });
     };
     go.onclick = send;
@@ -152,9 +146,9 @@ export function renderQuiz(el: HTMLElement, q: QuizSpec, opt: QuizOptions): { ke
     setTimeout(() => inp.focus(), 30);
   } else {
     // order: up / down buttons, then « Valider l'ordre »
-    let items = shuffled(q.choices.map((_, i) => i), hash(q.question));
+    const items = shuffled(q.choices.map((_, i) => i), hash(q.question));
     const list = h('ol', 'quiz-order');
-    const go = h('button', 'c-btn', 'Valider l’ordre') as HTMLButtonElement;
+    const go = h('button', 'c-btn', esc(L.validateOrder)) as HTMLButtonElement;
     const paint = () => {
       list.replaceChildren();
       items.forEach((idx, pos) => {
@@ -163,7 +157,7 @@ export function renderQuiz(el: HTMLElement, q: QuizSpec, opt: QuizOptions): { ke
         lab.textContent = q.choices[idx];
         const up = h('button', 'ord-b', '▲') as HTMLButtonElement;
         const dn = h('button', 'ord-b', '▼') as HTMLButtonElement;
-        up.title = 'Monter'; dn.title = 'Descendre';
+        up.title = L.moveUp; dn.title = L.moveDown;
         up.disabled = locked || pos === 0;
         dn.disabled = locked || pos === items.length - 1;
         up.onclick = () => { [items[pos - 1], items[pos]] = [items[pos], items[pos - 1]]; paint(); };
@@ -179,8 +173,8 @@ export function renderQuiz(el: HTMLElement, q: QuizSpec, opt: QuizOptions): { ke
         paint();
         if (!opt.feedback || ok) return;
         const sol = h('ol', 'quiz-order sol');
-        for (const c of q.choices) sol.append(h('li', undefined, escape(c)));
-        body.append(h('p', 'quiz-expected', 'Ordre attendu :'), sol);
+        for (const c of q.choices) sol.append(h('li', undefined, esc(c)));
+        body.append(h('p', 'quiz-expected', esc(L.expectedOrder)), sol);
       });
       paint();
     };
@@ -189,5 +183,3 @@ export function renderQuiz(el: HTMLElement, q: QuizSpec, opt: QuizOptions): { ke
   }
   return { key: (i) => key(i) };
 }
-
-const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

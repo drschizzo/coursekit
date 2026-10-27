@@ -5,7 +5,8 @@
 // diagrams, the stage and the exercises all run ./model.ts.
 
 import { choice, dec, defineCourse, fr, numeric, pct, type Capsule } from '@coursekit/core';
-import { pickCapsules } from '@coursekit/diagrams';
+import { CC } from '@coursekit/diagrams';
+import { pickCapsules } from '@coursekit/toolbox';
 import { choiceQ, type Exercise, type WorkshopConfig } from '@coursekit/exercises';
 import { DIAGRAMS } from './diagrams.ts';
 import {
@@ -77,18 +78,18 @@ const curve = (ctx: CanvasRenderingContext2D, I: number[], col: string, top: num
 const yearOf = (step: StepFn, p = {}) => simulate({ ...p, days: 200 }, step).days.map((d) => d.I);
 
 const stepPreview = (ctx: CanvasRenderingContext2D, fn: Function | null) => {
-  ctx.fillStyle = '#7c9cff'; ctx.font = '11px Inter, sans-serif';
+  ctx.fillStyle = CC.blue; ctx.font = '11px Inter, sans-serif';
   if (!fn) { ctx.fillText('écrivez votre fonction', 20, 20); return; }
   let mine: number[] = [];
   try { mine = yearOf(fn as StepFn); } catch { ctx.fillText('votre fonction lève une erreur', 20, 20); return; }
   const ref = yearOf(stepRef);
   const top = Math.max(...ref) * 1.15;
   curve(ctx, ref, 'rgba(124,156,255,.6)', top);
-  curve(ctx, mine, '#ffb35c', top);
-  ctx.fillStyle = '#e6eaf5';
+  curve(ctx, mine, CC.acc, top);
+  ctx.fillStyle = CC.fg;
   ctx.fillText('contagieux pendant 200 jours, sans mesures', 30, 18);
-  ctx.fillStyle = '#ffb35c'; ctx.fillText('votre calcul', 30, 34);
-  ctx.fillStyle = '#7c9cff'; ctx.fillText('référence', 110, 34);
+  ctx.fillStyle = CC.acc; ctx.fillText('votre calcul', 30, 34);
+  ctx.fillStyle = CC.blue; ctx.fillText('référence', 110, 34);
 };
 
 const R_FLU = r0(12, 0.025, 5);
@@ -194,7 +195,8 @@ const workshop: WorkshopConfig = {
 const isHeld = (v: Record<string, number>) => epidemicOf(v).outcome !== 'overflow';
 const townHud = (v: Record<string, number>) => `R0 = ${fr(r0Of(v), 2)} · ${pct(epidemicOf(v).attack)} de la ville infectée en un an`;
 
-const course = defineCourse({
+export default defineCourse({
+  workshop,
   id: 'epidemie', version: 1, language: 'fr',
   title: 'Comment une épidémie se propage',
   lead: 'Pourquoi une épidémie démarre, accélère puis s’arrête d’elle-même, et comment la vaccination et la réduction des contacts la freinent. Le cours suit une maladie imaginaire dans une ville de 100 000 habitants ; chaque chiffre est calculé par une petite simulation que vous pouvez faire varier.',
@@ -510,4 +512,3 @@ const course = defineCourse({
   },
 });
 
-export default Object.assign(course, { workshop });

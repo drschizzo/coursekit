@@ -13,6 +13,7 @@ import {
   GRID, MAZE, PAPER, atLeastOne, gridRate, makeMaze, mazeOf, model, ncaParams, pruneShare, replayOlder, rollGrid,
   rollMaze, spread, stepsNeeded, trialsOf, type CellState,
 } from './model.ts';
+import { CC } from '@coursekit/diagrams';
 
 const near = (a: number, b: number, rel = 0.03) => Math.abs(a - b) <= Math.abs(b) * rel;
 const median = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
@@ -99,13 +100,13 @@ const gridTrace = (rule: ((c: number, nb: number[]) => number) | undefined, q: o
 const previewRuns = new WeakMap<Function, ReturnType<typeof rollMaze> | null>();
 
 function mazePreview(ctx: CanvasRenderingContext2D, fn: Function | null): void {
-  ctx.fillStyle = '#7c9cff'; ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = CC.blue; ctx.font = '11px Inter, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   if (!fn) { ctx.fillText('écrivez votre fonction', 20, 20); return; }
   if (!previewRuns.has(fn)) { try { previewRuns.set(fn, rollMaze({ D: 400, rule: fn as Rule })); } catch { previewRuns.set(fn, null); } }
   const r = previewRuns.get(fn);
   if (!r) { ctx.fillText('votre fonction lève une erreur', 20, 20); return; }
   drawMaze(ctx, r, r.frames[r.steps], 20, 30, 190);
-  ctx.fillStyle = '#e6eaf5';
+  ctx.fillStyle = CC.fg;
   ctx.fillText(`après ${fr(r.steps)} pas : ${fr(r.wrong[r.steps])} cases mal classées`, 20, 18);
   ctx.fillStyle = COL.reached; ctx.fillText('atteinte et vivante', 226, 60);
   ctx.fillStyle = '#9fb3ff'; ctx.fillText('morte', 226, 80);
@@ -122,10 +123,10 @@ function assemblyPreview(ctx: CanvasRenderingContext2D, cellRule: Rule, colorRul
     assemblyRuns.set(cellRule, v); assemblyRuns.set(colorRule, v);
   }
   const r = assemblyRuns.get(cellRule);
-  if (!r) { ctx.fillStyle = '#ff6b7a'; ctx.fillText('une de vos fonctions lève une erreur', 20, 20); return; }
+  if (!r) { ctx.fillStyle = CC.red; ctx.fillText('une de vos fonctions lève une erreur', 20, 20); return; }
   drawMaze(ctx, r.maze, r.maze.frames[r.maze.steps], 20, 40, 160);
   drawGrid(ctx, r.grid.n, r.grid.frames[r.grid.frames.length - 1], 200, 40, 160);
-  ctx.fillStyle = '#e6eaf5';
+  ctx.fillStyle = CC.fg;
   const w = r.maze.wrong[r.maze.steps], k = r.grid.conflicts[r.grid.conflicts.length - 1], sx = (n: number) => (n > 1 ? 's' : '');
   ctx.fillText(`labyrinthe : ${fr(w)} case${sx(w)} mal classée${sx(w)}`, 20, 24);
   ctx.fillText(`grille : ${fr(k)} conflit${sx(k)}`, 200, 216);
@@ -274,7 +275,8 @@ const isSolved = (v: Record<string, number>) => mazeOf(v).outcome === 'solved';
 const gridIs = (v: Record<string, number>, o: string) => trialsOf({ ...v, K: 1 }).runs[0].outcome === o;
 const full = (v: Record<string, number>) => spread(21, Math.round(v.steps), v.cp).every((x) => x === 1);
 
-const course = defineCourse({
+export default defineCourse({
+  workshop,
   id: 'nca', version: 1, language: 'fr',
   title: 'Raisonner avec des automates cellulaires neuronaux',
   lead: 'Une grille de cellules qui ne voient que leurs voisines peut-elle résoudre un labyrinthe ou une grille de contraintes ? Ce cours suit l’article « Reasoning with Neural Cellular Automata » (Etcheverry et al., 2026) : comment l’information circule de proche en proche, pourquoi le hasard aide, comment on entraîne ces automates et comment ils économisent leur calcul. Chaque chiffre est calculé par deux petits automates que vous pouvez faire varier.',
@@ -707,4 +709,3 @@ const course = defineCourse({
   },
 });
 
-export default Object.assign(course, { workshop });

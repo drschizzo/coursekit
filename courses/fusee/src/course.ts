@@ -5,7 +5,8 @@
 // text, the diagrams, the stage and the exercises all run ./model.ts.
 
 import { choice, dec, defineCourse, fr, numeric, pct, type Capsule } from '@coursekit/core';
-import { pickCapsules } from '@coursekit/diagrams';
+import { CC } from '@coursekit/diagrams';
+import { pickCapsules } from '@coursekit/toolbox';
 import { choiceQ, type Exercise, type WorkshopConfig } from '@coursekit/exercises';
 import { DIAGRAMS } from './diagrams.ts';
 import {
@@ -61,7 +62,7 @@ const CAPSULES: Capsule[] = [
 // ----------------------------------------------------------- exercises
 
 const stepPreview = (ctx: CanvasRenderingContext2D, fn: Function | null) => {
-  ctx.fillStyle = '#7c9cff'; ctx.font = '11px Inter, sans-serif';
+  ctx.fillStyle = CC.blue; ctx.font = '11px Inter, sans-serif';
   if (!fn) { ctx.fillText('écrivez votre fonction', 20, 20); return; }
   let mine: number[] = [];
   try { mine = verticalFlight(S2, LAUNCHER.payload, fn as never); } catch { ctx.fillText('votre fonction lève une erreur', 20, 20); return; }
@@ -73,11 +74,11 @@ const stepPreview = (ctx: CanvasRenderingContext2D, fn: Function | null) => {
     ctx.stroke();
   };
   curve(ref, 'rgba(124,156,255,.6)');
-  curve(mine, '#ffb35c');
-  ctx.fillStyle = '#e6eaf5';
+  curve(mine, CC.acc);
+  ctx.fillStyle = CC.fg;
   ctx.fillText('altitude du second étage seul (sans air)', 30, 18);
-  ctx.fillStyle = '#ffb35c'; ctx.fillText('votre calcul', 30, 34);
-  ctx.fillStyle = '#7c9cff'; ctx.fillText('référence', 110, 34);
+  ctx.fillStyle = CC.acc; ctx.fillText('votre calcul', 30, 34);
+  ctx.fillStyle = CC.blue; ctx.fillText('référence', 110, 34);
 };
 
 /** Three rockets to test a Δv function on. */
@@ -236,7 +237,8 @@ const flightHud = (v: Record<string, number>) => {
 };
 const isOrbit = (v: Record<string, number>) => flightOf(v).outcome === 'orbit';
 
-const course = defineCourse({
+export default defineCourse({
+  workshop,
   id: 'fusee', version: 1, language: 'fr',
   title: 'Comment fonctionne une fusée',
   lead: 'De la poussée des moteurs jusqu’à l’orbite : pourquoi une fusée décolle, pourquoi elle a plusieurs étages, pourquoi un satellite ne retombe pas, et pourquoi la fusée s’incline juste après le décollage. Chaque chiffre du cours est calculé par une petite simulation que vous pouvez faire varier.',
@@ -562,4 +564,3 @@ const course = defineCourse({
   },
 });
 
-export default Object.assign(course, { workshop });

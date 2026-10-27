@@ -5,6 +5,7 @@
 import { fr } from '@coursekit/core';
 import { canvasStage } from '@coursekit/ui';
 import { BEDS, DAYS, N, OUTCOME, epidemicOf, type Day, type Epidemic } from './model.ts';
+import { CC } from '@coursekit/diagrams';
 
 const COLS = 40, ROWS = 25, DOTS = COLS * ROWS;
 const PER_DOT = N / DOTS;
@@ -35,7 +36,7 @@ const dayAt = (e: Epidemic, t: number): Day => {
   return e.days[d];
 };
 
-const COL = { S: '#3a4a6b', I: '#ffb35c', R: '#5ee0a0', V: '#7c9cff' };
+const COL = { S: '#3a4a6b', I: CC.acc, R: CC.green, V: CC.blue };
 
 function hud(ctx: CanvasRenderingContext2D, x: number, y: number, d: Day, e: Epidemic): void {
   ctx.font = '12px Inter, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -117,7 +118,7 @@ export const stage = () => canvasStage({
       ctx.lineWidth = 3;
       for (let i = 1; i < e.days.length && e.days[i].t <= Math.min(d.t, T); i++) {
         const a = e.days[i - 1], b = e.days[i];
-        ctx.strokeStyle = b.beds > BEDS ? '#ff6b7a' : '#ffb35c';
+        ctx.strokeStyle = b.beds > BEDS ? CC.red : CC.acc;
         ctx.beginPath(); ctx.moveTo(X(a.t), Y(a.beds)); ctx.lineTo(X(b.t), Y(b.beds)); ctx.stroke();
       }
       ctx.lineWidth = 1;

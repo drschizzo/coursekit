@@ -174,14 +174,14 @@ export interface Claim { text: string; check(): boolean | string }
 
 // ---------------------------------------------------------------- the stage
 
+/** A rectangle in CSS pixels, relative to the stage. */
+export interface Rect { x: number; y: number; w: number; h: number }
+
 /**
  * What fills the background: a 3D scene, a 2D simulation, an image, nothing.
  * The player calls `show` when the scene changes and `update` when its
  * settings change.
  */
-/** A rectangle in CSS pixels, relative to the stage. */
-export interface Rect { x: number; y: number; w: number; h: number }
-
 export interface Stage {
   mount(el: HTMLElement): void;
   /**
@@ -191,7 +191,7 @@ export interface Stage {
   layout?(safe: Rect): void;
   show(scene: string, settings: Vals): void | Promise<void>;
   update(settings: Vals): void;
-  status(): { busy: boolean; label: string; progress?: number };
+  status(): StageStatus;
   /** the learner may orbit / pan the view; reset brings back the authored view */
   resetView?(): void;
   dispose(): void;
@@ -230,7 +230,12 @@ export interface ExerciseBase {
 
 export interface Labels { [key: string]: string }
 
-export interface CourseDef {
+/**
+ * A course. `E` is the type of its workshop exercises and `W` the workshop's
+ * settings: the core does not know them (see @coursekit/exercises, whose
+ * `Course` type fills them in).
+ */
+export interface CourseDef<E extends ExerciseBase = ExerciseBase, W = unknown> {
   id: string;
   version: number;
   language: string;
@@ -253,15 +258,20 @@ export interface CourseDef {
   /** initial values */
   defaults?: Vals;
   model?: DomainModel;
-  exercises?: ExerciseBase[];
+  exercises?: E[];
+  /** workshop-wide settings (helpers, scenarios, the assembly page) */
+  workshop?: W;
   /** text of the assessment grid, shown on the home page and in the exam */
   rubric?: string[];
-  /** overrides of the interface texts */
+  /** overrides of the interface texts (see `FR` for the keys) */
   labels?: Labels;
   /** forbidden phrasings, checked by the content lint (on top of the defaults) */
   bannedPhrases?: string[];
   content(c: import('./builder.ts').Builder): void;
 }
+
+/** What a stage tells the player: whether it is computing, and the label of its badge. */
+export interface StageStatus { busy: boolean; label: string; progress?: number }
 
 export interface DiagramEnv {
   /** seconds since the diagram appeared (keeps running in pauses) */

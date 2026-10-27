@@ -267,7 +267,7 @@ function atoms(ctx: Ctx, e: DiagramEnv): void {
   text(ctx, 'd’affichage, pas une propriété', xr, yr + 112, CC.dim, 10);
 }
 
-function timescale(ctx: Ctx, e: DiagramEnv): void {
+function timescale(ctx: Ctx, _e: DiagramEnv): void {
   const ratio = timeRatio(), x0 = 24, w = 330;
   const bar = (y: number, years: number, label: string, col: string) => {
     const bw = (Math.log10(years) / Math.log10(BOOK.lambertYears)) * w;
