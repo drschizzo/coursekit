@@ -9,11 +9,17 @@ dit rien de faux.
 Le dépôt contient la bibliothèque, six cours d’exemple et une skill pour Claude Code,
 `/generate_course`, qui écrit un cours complet à partir d’un sujet.
 
-Deux des cours d’exemple sont en ligne et peuvent être suivis sans rien installer :
+Les cours d’exemple sont en ligne et peuvent être suivis sans rien installer, depuis
+[drschizzo.github.io/coursekit](https://drschizzo.github.io/coursekit/) :
 
-- [Comment fonctionne une fusée](https://cute-sherbet-6a072d.netlify.app/)
-- [Comment une épidémie se propage](https://fluffy-cupcake-34e88b.netlify.app/), écrit avec
-  `/generate_course`
+- [Comment fonctionne une fusée](https://drschizzo.github.io/coursekit/fusee/)
+- [Comment une épidémie se propage](https://drschizzo.github.io/coursekit/epidemie/), écrit avec `/generate_course`
+- [AlphaGo, AlphaZero et AlphaNIST](https://drschizzo.github.io/coursekit/alphazero/)
+- [Raisonner avec des automates cellulaires neuronaux](https://drschizzo.github.io/coursekit/nca/)
+- [Les mondes de La Cité des permutants](https://drschizzo.github.io/coursekit/permutants/)
+- [La chute d’un objet](https://drschizzo.github.io/coursekit/demo-mini/), un cours jouet qui montre chaque élément du format
+
+Ils sont publiés automatiquement à chaque mise à jour de la branche `main`.
 
 Ce README a deux parties :
 
@@ -57,8 +63,8 @@ nouveau après chaque mise à jour du projet ou création d’un cours.
 ## 3. Regarder un cours d’exemple
 
 Avant d’en créer un, il est utile de voir à quoi ressemble un cours terminé. Le plus simple est
-d’ouvrir une des versions en ligne : [la fusée](https://cute-sherbet-6a072d.netlify.app/) ou
-[l’épidémie](https://fluffy-cupcake-34e88b.netlify.app/). On peut aussi lancer un cours sur sa
+d’ouvrir une des versions en ligne : [la fusée](https://drschizzo.github.io/coursekit/fusee/) ou
+[l’épidémie](https://drschizzo.github.io/coursekit/epidemie/). On peut aussi lancer un cours sur sa
 machine :
 
 ```bash
