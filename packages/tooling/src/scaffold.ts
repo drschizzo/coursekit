@@ -32,7 +32,7 @@ export function scaffold(dir: string, title: string): void {
     'package.json': JSON.stringify({
       name: `course-${id}`, version: '0.1.0', private: true, type: 'module',
       scripts: { dev: `vite --port ${port} --strictPort`, build: 'vite build', preview: 'vite preview', check: 'coursekit check src/course.ts', tune: 'coursekit tune src/tune.ts' },
-      dependencies: { '@coursekit/core': '*', '@coursekit/ui': '*', '@coursekit/diagrams': '*', '@coursekit/exercises': '*' },
+      dependencies: { '@coursekit/core': '*', '@coursekit/diagrams': '*', '@coursekit/exercises': '*', '@coursekit/toolbox': '*', '@coursekit/ui': '*' },
       devDependencies: { '@coursekit/tooling': '*' },
     }, null, 2),
     'index.html': `<!doctype html>\n<html lang="fr">\n  <head>\n    <meta charset="UTF-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n    <title>${title}</title>\n  </head>\n  <body>\n    <div id="app"></div>\n    <script type="module" src="/src/main.ts"></script>\n  </body>\n</html>\n`,
@@ -45,6 +45,7 @@ export function scaffold(dir: string, title: string): void {
 // reports the texts that leave it.
 
 import { fr } from '@coursekit/core';
+import { CC } from '@coursekit/diagrams';
 import { canvasStage } from '@coursekit/ui';
 import { runOf } from './model.ts';
 
@@ -57,7 +58,7 @@ export const stage = () => canvasStage({
       ctx.fillStyle = '#0b0f1a'; ctx.fillRect(0, 0, w, h);
       // a bar that grows to the result, in the safe area
       const full = Math.min(1, t / 1.5) * Math.min(1, r.result / 10);
-      ctx.fillStyle = '#7c9cff';
+      ctx.fillStyle = CC.blue; // the palette shared with the diagrams and the theme
       ctx.fillRect(safe.x + 12, safe.y + safe.h / 2, (safe.w - 24) * full, 24);
       ctx.fillStyle = 'rgba(230,234,245,.75)'; ctx.font = '12px Inter, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
       ctx.fillText(\`x = \${fr(s.x ?? 1, 1)} · résultat \${fr(r.result, 1)}\`, safe.x + 12, safe.y + 12);
@@ -65,7 +66,7 @@ export const stage = () => canvasStage({
   },
 });
 `,
-    'src/course.ts': `import { defineCourse } from '@coursekit/core';\nimport { runOf } from './model.ts';\n\nexport default defineCourse({\n  id: '${id}', version: 1, language: 'fr',\n  title: ${JSON.stringify(title)},\n  lead: 'Une phrase qui dit ce que le cours explique.',\n  audience: { level: 'lycée', prerequisites: 'Ce qu’il faut savoir pour suivre le cours.', effort: 'trois à cinq minutes' },\n  modules: [\n    { id: 'm1', title: 'Premier module', pitch: 'De quoi parle ce module.', goals: ['Ce que l’élève saura faire'], summary: ['Ce qu’il faut retenir'] },\n  ],\n  scenes: { bar: 'Le résultat du modèle' },\n  stageKeys: ['x'],\n  defaults: { x: 1 },\n  content(c) {\n    c.module('m1');\n    c.chapter('Premier chapitre', () => {\n      c.stage('bar', { x: 2 });\n      c.step('Une première étape', 'Un texte court : une idée par étape, soixante-quinze mots au plus.');\n      // a text that quotes the model is written when it is shown: loading the page does not wait for the model\n      c.step('Ce que dit le modèle', () => \`Pour x = 2, le modèle donne \${runOf({ x: 2 }).result}.\`, { claims: [{ text: 'x = 2 donne 4', check: () => runOf({ x: 2 }).result === 4 }] });\n      c.question('q-1', 'Une question ?', ['la bonne réponse, écrite en premier', 'un premier distracteur plausible', 'un second distracteur plausible'], 'L’explication de la réponse.');\n    });\n  },\n});\n`,
+    'src/course.ts': `import { defineCourse } from '@coursekit/core';\nimport { model, runOf } from './model.ts';\n\nexport default defineCourse({\n  id: '${id}', version: 1, language: 'fr',\n  title: ${JSON.stringify(title)},\n  lead: 'Une phrase qui dit ce que le cours explique.',\n  audience: { level: 'lycée', prerequisites: 'Ce qu’il faut savoir pour suivre le cours.', effort: 'trois à cinq minutes' },\n  modules: [\n    { id: 'm1', title: 'Premier module', pitch: 'De quoi parle ce module.', goals: ['Ce que l’élève saura faire'], summary: ['Ce qu’il faut retenir'] },\n  ],\n  model,\n  scenes: { bar: 'Le résultat du modèle' },\n  stageKeys: ['x'],\n  defaults: { x: 1 },\n  content(c) {\n    c.module('m1');\n    c.chapter('Premier chapitre', () => {\n      c.stage('bar', { x: 2 });\n      c.step('Une première étape', 'Un texte court : une idée par étape, soixante-quinze mots au plus.');\n      // a text that quotes the model is written when it is shown: loading the page does not wait for the model\n      c.step('Ce que dit le modèle', () => \`Pour x = 2, le modèle donne \${runOf({ x: 2 }).result}.\`, { claims: [{ text: 'x = 2 donne 4', check: () => runOf({ x: 2 }).result === 4 }] });\n      c.question('q-1', 'Une question ?', ['la bonne réponse, écrite en premier', 'un premier distracteur plausible', 'un second distracteur plausible'], 'L’explication de la réponse.');\n    });\n  },\n});\n`,
     'src/model.ts': `// The course's executable model: pure functions, no DOM. Diagrams, the stage,\n// experiments, exercises and the figures of the text all call it.\n\nimport { memo, rng, type DomainModel } from '@coursekit/core';\n\n/** One run of the model for a set of values (memoised: the stage and the diagrams share it). */\nexport const runOf = memo((v: Record<string, number>) => ({ result: (v.x ?? 1) * 2 }));\n\n/** The same, measured with noise: a seed gives one reproducible run. */\nexport const measureOf = (v: Record<string, number>, seed: number) => {\n  const r = rng(seed);\n  return { result: runOf(v).result + (r() - 0.5) * 0.2 };\n};\n\nexport const model: DomainModel = {\n  name: 'modèle',\n  checks: [{ name: 'un cas dont on connaît la réponse', run: () => (runOf({ x: 2 }).result === 4 ? null : 'résultat inattendu') }],\n};\n`,
     'src/tune.ts': `// Tuning the model before writing the content: \`npm run tune\`. A model that\n// draws at random runs on several seeds; the windows hold for each one.\n\nimport { defineTune } from '@coursekit/tooling';\nimport { measureOf } from './model.ts';\n\nexport default defineTune({\n  title: 'x : résultat mesuré',\n  grid: { x: [0, 1, 2, 5] },\n  seeds: [1, 2, 3, 4, 5],\n  run: (p, seed) => measureOf(p, seed),\n  show: (r) => r.result.toFixed(2),\n  expect: [\n    { label: 'le résultat croît avec x', test: (rows) => rows.every((r, i) => !i || r.r.result >= rows[i - 1].r.result) },\n    { label: 'à x = 2, le résultat est proche de 4 (chaque graine)', where: (p) => p.x === 2, ok: (r) => Math.abs(r.result - 4) < 0.2 },\n    { label: 'à x = 5, au moins 4 graines sur 5 au-dessus de 9,9', where: (p) => p.x === 5, ok: (r) => r.result > 9.9, atLeast: 4 },\n  ],\n});\n`,
   };

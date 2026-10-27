@@ -3,18 +3,20 @@
 // builder lays the content out in order (see ./builder.ts). Times only serve
 // the player's clock — a step animates for a while, then the reader moves on.
 //
+// The timeline is what the course *is*: it does not change once compiled.
+// What a reading of it does (the clock, the pause the learner is in, the
+// settings they moved) lives in a `Reading` (see ./reading.ts).
+//
 // Taken from avbd's course/tour.ts, with the content moved out.
 
-import type { Claim, Control, Goal, Predict, QuizSpec, Vals } from './types.ts';
+import type { Claim, Control, Goal, Predict, QuizSpec, Text, Vals } from './types.ts';
 
 export interface Caption {
   t: number;
   kicker: string;
   title: string;
-  /** a lazy text (see `Text`) is written on first reading, then kept */
-  text: string;
-  /** the text is written on first reading */
-  lazy: boolean;
+  /** the text, or the function that writes it on first reading (see `captionText`) */
+  source: Text;
   note: string;
   code: string;
   hud: ((v: Vals) => string) | null;
@@ -25,11 +27,19 @@ export interface Caption {
   claims: Claim[];
 }
 
+const written = new WeakMap<Caption, string>();
+
+/** The text of a step: a lazy text is written on first reading, then kept. */
+export function captionText(c: Caption): string {
+  if (typeof c.source === 'string') return c.source;
+  let s = written.get(c);
+  if (s == null) { s = c.source(); written.set(c, s); }
+  return s;
+}
+
 export interface DiagSpec { t0: number; t1: number; name: string; arg?: string; big?: boolean }
 export interface Chapter { t: number; title: string; part: string; module: number }
 export interface SceneEvent { t: number; key: string; patch?: Partial<Vals> }
-
-export type StopKind = 'try' | 'quiz' | 'card' | 'review' | 'explain' | 'lab' | 'test';
 
 export interface TourQuiz extends QuizSpec {
   module: number;
@@ -37,53 +47,92 @@ export interface TourQuiz extends QuizSpec {
   review: boolean;
 }
 
-export interface Stop {
+// ------------------------------------------------------------------ pauses
+
+interface StopBase {
   t: number;
-  until: number;
-  kind: StopKind;
   id: string;
   title: string;
-  prompt?: string;
+  /** index of the module the pause belongs to (set when the course compiles) */
+  module: number;
+}
+
+/** An experiment: controls, goals, a prediction before, a conclusion after. */
+export interface TryStop extends StopBase {
+  kind: 'try';
+  /** the settings hold until this time (end of chapter, or next step) */
+  until: number;
+  prompt: string;
   controls: Control[];
   goals?: Goal[];
   seq?: boolean;
   diag?: boolean;
-  quiz?: TourQuiz;
   predict?: Predict;
   conclusion?: string;
   /** the fix of a clinic case: its broken settings, and its symptom (checked by the tools) */
   clinic?: { id: string; fault: Vals; symptom?: (v: Vals) => unknown };
-  explain?: { prompt: string; model: string };
-  /** lab: the exercise to open (or 'assembly') */
-  lab?: string;
-  test?: 'pre' | 'post';
-  /** card: module just finished (−1 at the start) → next (null at the end) */
-  from?: number;
-  to?: number | null;
-  module?: number;
-  // runtime state
-  visited?: boolean;
-  reached?: boolean[];
-  predicted?: number;
-  ov: Vals;
 }
+export interface QuizStop extends StopBase { kind: 'quiz'; quiz: TourQuiz }
+/** Module card: module just finished (−1 at the start) → next (null at the end). */
+export interface CardStop extends StopBase { kind: 'card'; from: number; to: number | null }
+export interface ReviewStop extends StopBase { kind: 'review' }
+export interface ExplainStop extends StopBase { kind: 'explain'; explain: { prompt: string; model: string } }
+/** An invitation to a workshop exercise (or 'assembly'). */
+export interface LabStop extends StopBase { kind: 'lab'; lab: string; prompt: string }
+export interface TestStop extends StopBase { kind: 'test'; test: 'pre' | 'post'; prompt: string }
+
+export type Stop = TryStop | QuizStop | CardStop | ReviewStop | ExplainStop | LabStop | TestStop;
+export type StopKind = Stop['kind'];
+export type StopOf<K extends StopKind> = Extract<Stop, { kind: K }>;
+
+/**
+ * What every kind of pause is, in one place: whether the reader's « Questions
+ * et exercices » switch can skip it, and which line of the effort estimate it
+ * counts in (null: not counted, or counted elsewhere — the exercises by module).
+ * Adding a kind means adding it here: the compiler then points at every
+ * `Record<StopKind, …>` and exhaustive switch still to complete.
+ */
+export const STOP_KINDS: Record<StopKind, { skippable: boolean; effort: 'experiment' | 'question' | 'explain' | 'test' | 'review' | null }> = {
+  try: { skippable: true, effort: 'experiment' },
+  quiz: { skippable: true, effort: 'question' },
+  card: { skippable: false, effort: null },
+  review: { skippable: true, effort: 'review' },
+  explain: { skippable: true, effort: 'explain' },
+  lab: { skippable: true, effort: null },
+  test: { skippable: false, effort: 'test' },
+};
+
+/** For exhaustive switches: the compiler fails here when a case is missing. */
+export function assertNever(x: never): never { throw new Error(`cas non traité : ${JSON.stringify(x)}`); }
 
 export interface TimelineModule { id: string; title: string; kind: 'core' | 'exam' | 'bonus'; chapters: number[]; t0: number; t1: number }
 
-export class Timeline {
-  t = 0;
-  playing = true;
-  pauses = true;
-  /** step-by-step reading: the clock waits at each new step and pause */
-  stepMode = true;
-  /** waiting for the learner at the end of a step */
-  held = false;
-  stop: Stop | null = null;
-  /** seconds spent in pauses and waits — diagrams keep animating */
-  extra = 0;
-  ptr: { x: number; y: number } | null = null;
-  hits = new Set<string>();
+/** Index of the last item whose time is ≤ t (0 when none): a binary search over sorted times. */
+function lastAt<T>(xs: T[], t: number, at: (x: T) => number): number {
+  let lo = 0, hi = xs.length - 1, i = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (at(xs[mid]) <= t) { i = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return i;
+}
 
+/** Values from layers on top of the defaults. */
+export function valsOf(defaults: Vals, layers: Partial<Vals>[]): Vals {
+  const v: Vals = { ...defaults };
+  for (const layer of layers) Object.assign(v, layer);
+  return v;
+}
+
+/** The stage's settings: only the stage keys a layer actually sets. */
+export function stageValsOf(stageKeys: Set<string>, defaults: Vals, layers: Partial<Vals>[]): Vals {
+  const v = valsOf(defaults, layers);
+  const out: Vals = {};
+  for (const layer of layers) for (const k of Object.keys(layer)) if (stageKeys.has(k)) out[k] = v[k];
+  return out;
+}
+
+export class Timeline {
   caps: Caption[] = [];
   diags: DiagSpec[] = [];
   chapters: Chapter[] = [];
@@ -103,55 +152,34 @@ export class Timeline {
 
   // ------------------------------------------------------------- evaluation
 
-  /** Values in force at time t: defaults, SETs, the current scene's settings, the active pause. */
-  eval(t: number): Vals {
-    const v: Vals = { ...this.defaults };
-    for (const layer of this.layersAt(t)) Object.assign(v, layer);
-    return v;
-  }
-
-  private layersAt(t: number): Partial<Vals>[] {
+  /** The authored layers at time t: the SETs, then the current scene's settings. */
+  layersAt(t: number): Partial<Vals>[] {
     const out: Partial<Vals>[] = [];
     for (const s of this.sets) { if (t < s.t) break; out.push(s.patch); }
     const sc = this.sceneAt(t);
     if (sc?.patch) out.push(sc.patch);
-    for (const st of this.stops) {
-      if (st.kind !== 'try') continue;
-      if (st === this.stop || (st.visited && t >= st.t && t <= st.until)) out.push(st.ov);
-    }
     return out;
   }
 
-  /** The stage's settings at time t: only the stage keys somebody actually set. */
-  stageVals(t: number): Vals {
-    const v = this.eval(t);
-    const out: Vals = {};
-    for (const layer of this.layersAt(t)) for (const k of Object.keys(layer)) if (this.stageKeys.has(k)) out[k] = v[k];
-    return out;
-  }
+  /** Values the course sets at time t, before the learner touches anything. */
+  eval(t: number): Vals { return valsOf(this.defaults, this.layersAt(t)); }
+
+  /** The stage's settings at time t, before the learner touches anything. */
+  stageVals(t: number): Vals { return stageValsOf(this.stageKeys, this.defaults, this.layersAt(t)); }
 
   sceneAt(t: number): SceneEvent | null {
-    let cur: SceneEvent | null = null;
-    for (const s of this.scenes) { if (t < s.t) break; cur = s; }
-    return cur;
+    return this.scenes.length && this.scenes[0].t <= t ? this.scenes[lastAt(this.scenes, t, (s) => s.t)] : null;
   }
 
-  chapterAt(t: number): number {
-    let i = 0;
-    for (let j = 0; j < this.chapters.length; j++) if (t >= this.chapters[j].t) i = j;
-    return i;
-  }
+  chapterAt(t: number): number { return lastAt(this.chapters, t, (c) => c.t); }
 
-  capAt(t: number): number {
-    let i = 0;
-    for (let j = 0; j < this.caps.length; j++) if (t >= this.caps[j].t) i = j;
-    return i;
-  }
+  capAt(t: number): number { return lastAt(this.caps, t, (c) => c.t); }
 
   /** Time of the next step after t, or null at the end. */
   nextStepT(t: number): number | null {
-    for (const c of this.caps) if (c.t > t + 1e-3) return c.t;
-    return null;
+    const i = lastAt(this.caps, t + 1e-3, (c) => c.t);
+    const c = this.caps[this.caps[i]?.t > t + 1e-3 ? i : i + 1];
+    return c ? c.t : null;
   }
 
   /** Start of the current step, or of the previous one when t is at a step start. */
@@ -164,12 +192,16 @@ export class Timeline {
     return prev;
   }
 
-  /** Index of the step within its chapter, and the number of steps in it. */
-  stepInChapter(t: number): { i: number; n: number } {
-    const ci = this.chapterAt(t);
+  /** The steps of chapter `ci`. */
+  capsOfChapter(ci: number): Caption[] {
     const t0 = this.chapters[ci]?.t ?? 0;
     const t1 = ci + 1 < this.chapters.length ? this.chapters[ci + 1].t : this.duration;
-    const caps = this.caps.filter((c) => c.t >= t0 - 1e-3 && c.t < t1 - 1e-3);
+    return this.caps.filter((c) => c.t >= t0 - 1e-3 && c.t < t1 - 1e-3);
+  }
+
+  /** Index of the step within its chapter, and the number of steps in it. */
+  stepInChapter(t: number): { i: number; n: number } {
+    const caps = this.capsOfChapter(this.chapterAt(t));
     let i = 0;
     caps.forEach((c, k) => { if (t >= c.t - 1e-3) i = k; });
     return { i, n: Math.max(1, caps.length) };
@@ -179,40 +211,6 @@ export class Timeline {
     return this.diags.find((d) => t >= d.t0 && t < d.t1) ?? null;
   }
 
-  // ----------------------------------------------------------------- pauses
-
-  enterStop(st: Stop): void {
-    const v = this.eval(st.t);
-    st.ov = {};
-    for (const c of st.controls) st.ov[c.key] = v[c.key] ?? 0;
-    st.visited = true;
-    st.reached ||= st.goals?.map(() => false);
-    this.stop = st;
-    this.playing = false;
-    this.held = false;
-    this.ptr = null;
-    this.hits = new Set();
-  }
-
-  resume(): void {
-    if (!this.stop) return;
-    this.stop = null;
-    this.ptr = null;
-    this.playing = true;
-  }
-
-  /** Pauses after t are asked again (a jump back on the timeline). */
-  resetStops(t: number): void {
-    this.stop = null;
-    this.ptr = null;
-    this.extra = 0;
-    for (const st of this.stops) if (st.t >= t - 1e-3) { st.visited = false; st.ov = {}; st.reached = undefined; st.predicted = undefined; }
-  }
-
-  stopBetween(t0: number, t1: number): Stop | null {
-    return this.stops.find((st) => !st.visited && (this.pauses || st.kind === 'card' || st.kind === 'test') && st.t > t0 && st.t <= t1) ?? null;
-  }
-
   /** Every question that can come back in a review. */
-  get bank(): Stop[] { return this.stops.filter((s) => s.kind === 'quiz' && s.quiz?.review); }
+  get bank(): QuizStop[] { return this.stops.filter((s): s is QuizStop => s.kind === 'quiz' && s.quiz.review); }
 }

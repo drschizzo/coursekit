@@ -17,7 +17,9 @@ Scripts de la racine :
 
 | Script | Effet |
 |---|---|
-| `npm test` | Typage, test des règles du vérificateur, `check` et `tune` de tous les cours. |
+| `npm test` | Typage, lint, tests unitaires (Vitest), `check` et `tune` de tous les cours. C’est ce que lance la CI. |
+| `npm run typecheck` / `npm run lint` / `npm run test:unit` | Chacune de ces étapes seule. |
+| `npm run build:site` | Tous les cours d’exemple en un site, dans `_site/` : chacun dans son dossier, et une page qui les liste. La CI le publie sur GitHub Pages. |
 | `npm run check` / `npm run tune` / `npm run build` | La même commande dans chaque cours. |
 | `npm run dev:fusee`, `npm run dev:epidemie`, `npm run dev:demo` | Le serveur de développement d’un cours. |
 | `npm run new -- courses/<id> "<titre>"` | `coursekit new`. |

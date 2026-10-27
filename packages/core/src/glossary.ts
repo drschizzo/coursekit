@@ -32,12 +32,12 @@ export function createGlossary(terms: Term[] = []): Glossary {
       const m = re.exec(s);
       if (!m) continue;
       const before = s.slice(0, m.index);
-      if (/<[^>]*$/.test(before) || /\u0000\d*$/.test(before)) continue;
+      if (/<[^>]*$/.test(before) || /\uE000\d*$/.test(before)) continue;
       seen.add(id);
       spans.push(`<span class="gl" tabindex="0" data-g="${id}">${m[0]}</span>`);
-      s = `${before}\u0000${spans.length - 1}\u0001${s.slice(m.index + m[0].length)}`;
+      s = `${before}\uE000${spans.length - 1}\uE001${s.slice(m.index + m[0].length)}`;
     }
-    return s.replace(/\u0000(\d+)\u0001/g, (_, i) => spans[+i]);
+    return s.replace(/\uE000(\d+)\uE001/g, (_, i) => spans[+i]);
   };
 
   const find = (src: string): string[] => {

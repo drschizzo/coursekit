@@ -18,6 +18,19 @@ export const CC = {
   violet: '#b48cff',
 };
 
+/**
+ * The palette's colours as the theme's CSS variables: the player writes them
+ * on its root, so that the panels and the diagrams share one source. A
+ * course draws with `CC`, never with the hexadecimal values.
+ */
+export const CSS_PALETTE: Record<string, string> = {
+  '--accent': CC.blue,
+  '--accent-2': CC.violet,
+  '--good': CC.green,
+  '--warn': CC.acc,
+  '--bad': CC.red,
+};
+
 export const PI = Math.PI;
 export const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 export const clamp = (x: number, a: number, b: number) => (x < a ? a : x > b ? b : x);
@@ -70,7 +83,7 @@ export function text(ctx: Ctx, s: string, x: number, y: number, col = CC.fg, siz
 export function panel(ctx: Ctx, x: number, y: number, w: number, h: number, stroke: string, fill: string | null = null, r = 6, lw = 1.2): void {
   ctx.save();
   ctx.beginPath();
-  (ctx as any).roundRect(x, y, w, h, r);
+  ctx.roundRect(x, y, w, h, r);
   if (fill) { ctx.fillStyle = fill; ctx.fill(); }
   ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke();
   ctx.restore();

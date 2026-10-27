@@ -10,3 +10,4 @@ dist/
 .claude/*
 # the /generate_course skill is part of the project
 !.claude/skills/
+_site/

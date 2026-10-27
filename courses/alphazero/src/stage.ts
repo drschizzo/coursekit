@@ -13,11 +13,12 @@ import {
   EMPTY, FACTS, FORK, GD, MCTS_NOMINAL, ROBOT_OUTCOME, TRAIN, TRAIN_OUTCOME, after, bestMoves, checkpointAt, gdOf, legal, play, playoutGames, rng,
   robotOf, rolloutEval, search, trainOf, type Node, type RobotRun, type TrainRun,
 } from './model.ts';
+import { CC } from '@coursekit/diagrams';
 
 type Ctx = CanvasRenderingContext2D;
 interface Box { x: number; y: number; w: number; h: number }
 const INK = 'rgba(230,234,245,.85)', DIM = 'rgba(230,234,245,.5)', FAINT = 'rgba(230,234,245,.18)';
-const ACC = '#ffb35c', BLUE = '#7c9cff', GREEN = '#5ee0a0', RED = '#ff6b7a';
+const ACC = CC.acc, BLUE = CC.blue, GREEN = CC.green, RED = CC.red;
 
 /** The read-out, at the top of the safe area (under the scene's label); on a short safe area, its first two lines only. Returns its bottom. */
 function hud(ctx: Ctx, safe: Box, lines: [string, string][]): number {

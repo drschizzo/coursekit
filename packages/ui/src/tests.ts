@@ -5,7 +5,7 @@
 // each of its items names its pair, so the results compare skill by skill.
 // Taken from avbd's course/assess.ts; the questions now come from the course.
 
-import type { Capsule, TestItem, TestRecord, Tests } from '@coursekit/core';
+import { fmtValue, tr, type Capsule, type LabelSet, type TestItem, type TestRecord, type Tests } from '@coursekit/core';
 import { h, esc } from './dom.ts';
 import { renderQuiz } from './quiz.ts';
 
@@ -17,7 +17,7 @@ export interface TestHooks {
   pre?: TestRecord;
 }
 
-export function openTest(root: HTMLElement, kind: 'pre' | 'post', tests: Tests, capsules: Capsule[], hooks: TestHooks): void {
+export function openTest(root: HTMLElement, kind: 'pre' | 'post', tests: Tests, capsules: Capsule[], L: LabelSet, hooks: TestHooks): void {
   const A = tests.tools ?? [], PRE = tests.pre ?? [], POST = tests.post ?? [];
   const items: { part: 'a' | 'b'; it: TestItem }[] = kind === 'pre'
     ? [...A.map((it) => ({ part: 'a' as const, it })), ...PRE.map((it) => ({ part: 'b' as const, it }))]
@@ -43,27 +43,24 @@ export function openTest(root: HTMLElement, kind: 'pre' | 'post', tests: Tests, 
   const header = () => {
     box.replaceChildren();
     const x = h('button', 'home-x', '✕') as HTMLButtonElement;
-    x.title = 'Fermer (Échap) : le test pourra être repris depuis le début';
+    x.title = L.testCloseTip;
     x.onclick = close;
-    box.append(x, h('div', 'kicker', kind === 'pre' ? 'Test de départ' : 'Test final'));
+    box.append(x, h('div', 'kicker', esc(kind === 'pre' ? L.testPre : L.testPost)));
   };
 
   const intro = () => {
     header();
-    box.append(h('h2', undefined, kind === 'pre' ? 'Test de départ' : 'Test final'));
+    box.append(h('h2', undefined, esc(kind === 'pre' ? L.testPre : L.testPost)));
     if (kind === 'pre') {
-      box.append(h('p', undefined, `Ce test compte ${items.length} questions. Il ne donne pas de note : il sert à orienter votre travail.`));
-      if (A.length) box.append(h('p', undefined, `<b>Partie A</b> (${A.length} questions) : les outils utilisés dans le cours. Chaque question manquée vous orientera vers une fiche de la boîte à outils.`));
-      if (PRE.length) box.append(h('p', undefined, `<b>Partie B</b> (${PRE.length} questions) : les notions du cours. Vous n’êtes pas censé connaître les réponses. Répondez au mieux, sans chercher : ces questions reviendront, sous une autre forme, à la fin du cours.`));
-      box.append(h('p', undefined, 'Les corrections ne sont pas affichées pendant le test, pour ne pas influencer les questions suivantes. Elles sont données à la fin.'));
+      box.append(h('p', undefined, esc(tr(L, 'testPreIntro', { n: items.length }))));
+      if (A.length) box.append(h('p', undefined, tr(L, 'testPartA', { n: A.length })));
+      if (PRE.length) box.append(h('p', undefined, tr(L, 'testPartB', { n: PRE.length })));
+      box.append(h('p', undefined, esc(L.testNoCorrections)));
     } else {
-      box.append(
-        h('p', undefined, 'Ce test reprend, sous une autre forme, les questions sur les notions du test de départ. Les deux résultats sont comparés compétence par compétence.'),
-        h('p', undefined, 'Les corrections sont données à la fin.'),
-      );
+      box.append(h('p', undefined, esc(L.testPostIntro)), h('p', undefined, esc(L.testPostCorrections)));
     }
     const foot = h('div', 'card-foot');
-    const go = h('button', 'c-btn go', 'Commencer ▶') as HTMLButtonElement;
+    const go = h('button', 'c-btn go', esc(L.start)) as HTMLButtonElement;
     go.onclick = () => { i = 0; ask(); };
     foot.append(go);
     box.append(foot);
@@ -79,15 +76,15 @@ export function openTest(root: HTMLElement, kind: 'pre' | 'post', tests: Tests, 
     fill.style.width = `${(i / items.length) * 100}%`;
     prog.append(fill);
     box.append(prog);
-    const label = kind === 'pre' && A.length ? `Partie ${part.toUpperCase()} · question ${i + 1} / ${items.length}` : `Question ${i + 1} / ${items.length}`;
+    const label = kind === 'pre' && A.length ? tr(L, 'testPartLabel', { part: part.toUpperCase(), i: i + 1, n: items.length }) : tr(L, 'questionOf', { i: i + 1, n: items.length });
     const qEl = h('div', 'c-try');
     const foot = h('div', 'card-foot');
-    const next = h('button', 'c-btn go', i + 1 < items.length ? 'Question suivante ▶' : 'Voir les résultats ▶') as HTMLButtonElement;
+    const next = h('button', 'c-btn go', esc(i + 1 < items.length ? L.nextQuestion : L.seeResults)) as HTMLButtonElement;
     next.disabled = true;
     next.onclick = () => { i++; ask(); };
-    const skip = h('button', 'c-btn ghost', 'Je ne sais pas') as HTMLButtonElement;
+    const skip = h('button', 'c-btn ghost', esc(L.dontKnow)) as HTMLButtonElement;
     skip.onclick = () => { (part === 'a' ? rec.a : rec.b)[it.id] = 0; i++; ask(); };
-    const r = renderQuiz(qEl, it.q, {
+    const r = renderQuiz(qEl, it.q, L, {
       feedback: false, confidence: false, tag: it.skill, head: label,
       onDone: (res) => { (part === 'a' ? rec.a : rec.b)[it.id] = res.ok ? 1 : 0; next.disabled = false; skip.disabled = true; next.focus(); },
     });
@@ -103,12 +100,12 @@ export function openTest(root: HTMLElement, kind: 'pre' | 'post', tests: Tests, 
     rec.done = true;
     hooks.onDone(kind, rec);
     header();
-    box.append(h('h2', undefined, 'Résultats'));
+    box.append(h('h2', undefined, esc(L.results)));
     if (kind === 'pre') {
-      box.append(h('p', undefined, [A.length ? `Partie A (outils) : <b>${sum(rec.a)} / ${A.length}</b>.` : '', PRE.length ? `Partie B (notions) : <b>${sum(rec.b)} / ${PRE.length}</b>.` : ''].join(' ')));
+      box.append(h('p', undefined, [A.length ? tr(L, 'partAScore', { ok: sum(rec.a), n: A.length }) : '', PRE.length ? tr(L, 'partBScore', { ok: sum(rec.b), n: PRE.length }) : ''].join(' ')));
       const miss = A.filter((it) => !rec.a[it.id] && it.tool);
       if (miss.length) {
-        box.append(h('h3', undefined, 'Fiches recommandées'), h('p', undefined, 'Ces fiches de la boîte à outils correspondent aux questions manquées. Le cours vous les rappellera au moment où l’outil est utilisé.'));
+        box.append(h('h3', undefined, esc(L.recommended)), h('p', undefined, esc(L.recommendedText)));
         const row = h('div', 'test-tools');
         for (const id of [...new Set(miss.map((it) => it.tool!))]) {
           const c = capsules.find((x) => x.id === id);
@@ -119,28 +116,28 @@ export function openTest(root: HTMLElement, kind: 'pre' | 'post', tests: Tests, 
           row.append(b);
         }
         box.append(row);
-      } else if (A.length) box.append(h('p', undefined, 'Tous les outils de la partie A sont acquis. La boîte à outils reste disponible si vous avez besoin d’un rappel.'));
+      } else if (A.length) box.append(h('p', undefined, esc(L.allToolsOk)));
     } else {
       const pre = hooks.pre;
-      box.append(h('p', undefined, `Score : <b>${sum(rec.b)} / ${POST.length}</b>${pre?.done ? ` (test de départ : ${sum(pre.b)} / ${PRE.length})` : ''}.`));
+      box.append(h('p', undefined, tr(L, 'postScore', { ok: sum(rec.b), n: POST.length, pre: pre?.done ? esc(tr(L, 'postScorePre', { ok: sum(pre.b), n: PRE.length })) : '' })));
       const tbl = h('table', 'test-table');
-      tbl.append(h('tr', undefined, '<th>Compétence</th><th>Départ</th><th>Fin</th>'));
+      tbl.append(h('tr', undefined, `<th>${esc(L.skillTh)}</th><th>${esc(L.startTh)}</th><th>${esc(L.endTh)}</th>`));
       for (const it of POST) {
         const a = pre?.done && it.pair ? (pre.b[it.pair] ? '✓' : '—') : '·';
         tbl.append(h('tr', undefined, `<td>${esc(it.skill)}</td><td>${a}</td><td>${rec.b[it.id] ? '✓' : '—'}</td>`));
       }
       box.append(tbl);
     }
-    box.append(h('h3', undefined, 'Corrections'));
+    box.append(h('h3', undefined, esc(L.corrections)));
     const ul = h('ol', 'test-corr');
     for (const { part, it } of items) {
       const ok = (part === 'a' ? rec.a : rec.b)[it.id];
-      const ans = it.q.kind === 'number' ? `${String(it.q.value).replace('.', ',')}${it.q.unit ? ` ${it.q.unit}` : ''}` : it.q.kind === 'order' ? it.q.choices.join(' → ') : it.q.choices[it.q.answer];
-      ul.append(h('li', ok ? 'ok' : 'ko', `<b>${esc(it.skill)}</b> — ${esc(it.q.question)}<br><span>Réponse : ${esc(ans)}. ${esc(it.q.explain)}</span>`));
+      const ans = it.q.kind === 'number' ? `${fmtValue(it.q.value ?? 0, L.lang)}${it.q.unit ? ` ${it.q.unit}` : ''}` : it.q.kind === 'order' ? it.q.choices.join(' → ') : it.q.choices[it.q.answer];
+      ul.append(h('li', ok ? 'ok' : 'ko', `<b>${esc(it.skill)}</b> — ${esc(it.q.question)}<br><span>${esc(tr(L, 'answerIs', { answer: ans }))} ${esc(it.q.explain)}</span>`));
     }
     box.append(ul);
     const foot = h('div', 'card-foot');
-    const done = h('button', 'c-btn go', 'Fermer') as HTMLButtonElement;
+    const done = h('button', 'c-btn go', esc(L.close)) as HTMLButtonElement;
     done.onclick = close;
     foot.append(done);
     box.append(foot);

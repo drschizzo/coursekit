@@ -2,16 +2,16 @@
 // step, with its diagram and its two check questions. Taken from avbd's
 // course/toolbox.ts.
 
-import type { Capsule, DiagramEnv, Glossary } from '@coursekit/core';
+import { tr, type Capsule, type DiagramEnv, type Glossary, type LabelSet } from '@coursekit/core';
 import { DH, DW } from '@coursekit/diagrams';
-import { h } from './dom.ts';
+import { esc, h } from './dom.ts';
 import { highlight } from './highlight.ts';
 import { renderQuiz } from './quiz.ts';
 
 export interface CapsuleHooks { onDone(id: string): void; onClose(): void }
 
 export function openCapsule(
-  root: HTMLElement, cap: Capsule, glossary: Glossary,
+  root: HTMLElement, cap: Capsule, glossary: Glossary, L: LabelSet,
   draw: (name: string, ctx: CanvasRenderingContext2D, env: DiagramEnv) => void, hooks: CapsuleHooks,
 ): () => void {
   const el = h('div', 'c-capsule');
@@ -60,38 +60,36 @@ export function openCapsule(
   const paint = () => {
     box.replaceChildren();
     const x = h('button', 'home-x', '✕') as HTMLButtonElement;
-    x.title = 'Fermer (Échap)';
+    x.title = L.closeEsc;
     x.onclick = close;
-    box.append(x, h('div', 'kicker', 'Boîte à outils'), h('h2', undefined, cap.title));
+    box.append(x, h('div', 'kicker', esc(L.toolbox)), h('h2', undefined, esc(cap.title)));
     const dots = h('div', 'cap-dots');
     for (let i = 0; i <= cap.steps.length; i++) {
       const d = h('button', i === step ? 'on' : i < step ? 'done' : '') as HTMLButtonElement;
-      d.title = i < cap.steps.length ? cap.steps[i].title : 'Vérifier';
+      d.title = i < cap.steps.length ? cap.steps[i].title : L.checkStep;
       d.onclick = () => { step = i; paint(); };
       dots.append(d);
     }
     box.append(dots);
     if (step < cap.steps.length) {
       const s = cap.steps[step];
-      if (step === 0) box.append(h('p', 'cap-goal', `<b>Objectif.</b> ${glossary.rich(cap.goal)}<br><b>Utilisé pour :</b> ${glossary.rich(cap.used)}`));
-      box.append(h('h3', undefined, s.title), h('p', 'cap-text', glossary.rich(s.text)));
+      if (step === 0) box.append(h('p', 'cap-goal', tr(L, 'capsuleGoal', { goal: glossary.rich(cap.goal), used: glossary.rich(cap.used) })));
+      box.append(h('h3', undefined, esc(s.title)), h('p', 'cap-text', glossary.rich(s.text)));
       if (s.code) { const pre = h('pre', 'c-code'); pre.innerHTML = highlight(s.code); box.append(pre); }
       if (s.diagram) box.append(cv);
     } else {
-      box.append(h('h3', undefined, 'Vérifiez que l’outil est acquis'));
+      box.append(h('h3', undefined, esc(L.capsuleCheckTitle)));
       let ok = 0, answered = 0;
       const res = h('p', 'cap-res hidden');
       for (const q of cap.check) {
         const qEl = h('div', 'c-try cap-q');
-        renderQuiz(qEl, q, {
-          feedback: true, confidence: false, tag: 'Exercice',
+        renderQuiz(qEl, q, L, {
+          feedback: true, confidence: false, tag: L.exerciseTag,
           onDone: (r) => {
             answered++; if (r.ok) ok++;
             if (answered === cap.check.length) {
               if (ok === cap.check.length) hooks.onDone(cap.id);
-              res.textContent = ok === cap.check.length
-                ? 'Toutes les réponses sont justes : cette fiche est marquée comme acquise.'
-                : 'Relisez l’étape de la fiche qui correspond à l’erreur, puis réessayez plus tard depuis la boîte à outils.';
+              res.textContent = ok === cap.check.length ? L.capsuleAllRight : L.capsuleRetry;
               res.classList.remove('hidden');
             }
           },
@@ -101,10 +99,10 @@ export function openCapsule(
       box.append(res);
     }
     const nav = h('div', 'card-foot');
-    const prev = h('button', 'c-btn', '◀ Précédent') as HTMLButtonElement;
+    const prev = h('button', 'c-btn', esc(L.prev)) as HTMLButtonElement;
     prev.disabled = step === 0;
     prev.onclick = () => { step--; paint(); };
-    const next = h('button', 'c-btn go', step < cap.steps.length - 1 ? 'Suivant ▶' : step === cap.steps.length - 1 ? 'Vérifier ▶' : 'Fermer') as HTMLButtonElement;
+    const next = h('button', 'c-btn go', esc(step < cap.steps.length - 1 ? L.next : step === cap.steps.length - 1 ? L.checkNext : L.close)) as HTMLButtonElement;
     next.onclick = () => { if (step < cap.steps.length) { step++; paint(); } else close(); };
     nav.append(prev, next);
     box.append(nav);

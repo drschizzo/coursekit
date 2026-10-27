@@ -5,6 +5,7 @@
 import { canvasStage } from '@coursekit/ui';
 import { OUTCOME, R_EARTH, coast, flightOf, type Flight, type Sample } from './model.ts';
 import { fr } from '@coursekit/core';
+import { CC } from '@coursekit/diagrams';
 
 interface Prepared { f: Flight; tail: { x: number; y: number }[] }
 
@@ -37,7 +38,7 @@ function drawRocket(ctx: CanvasRenderingContext2D, x: number, y: number, h: numb
   ctx.fillStyle = '#d9deea';
   const body = stage === 0 ? h : h * 0.45;
   ctx.beginPath(); ctx.moveTo(-w / 2, 0); ctx.lineTo(-w / 2, -body * 0.82); ctx.lineTo(0, -body); ctx.lineTo(w / 2, -body * 0.82); ctx.lineTo(w / 2, 0); ctx.closePath(); ctx.fill();
-  if (stage === 0) { ctx.fillStyle = '#7c9cff'; ctx.fillRect(-w / 2, -h * 0.58, w, h * 0.04); }
+  if (stage === 0) { ctx.fillStyle = CC.blue; ctx.fillRect(-w / 2, -h * 0.58, w, h * 0.04); }
   ctx.restore();
 }
 
@@ -142,7 +143,7 @@ export const stage = () => canvasStage({
       ctx.lineWidth = 2.5;
       for (let i = 1; i < f.samples.length && f.samples[i].t <= tt; i++) {
         const a = f.samples[i - 1], b = f.samples[i];
-        ctx.strokeStyle = !b.burning ? 'rgba(230,234,245,.4)' : b.stage === 0 ? '#ffb35c' : '#5ee0a0';
+        ctx.strokeStyle = !b.burning ? 'rgba(230,234,245,.4)' : b.stage === 0 ? CC.acc : CC.green;
         const [x1, y1] = Q(a.x, a.y), [x2, y2] = Q(b.x, b.y);
         ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
       }

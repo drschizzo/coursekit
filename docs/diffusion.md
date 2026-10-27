@@ -73,6 +73,20 @@ relatifs : il se dépose sur n’importe quel hébergement statique, dans n’im
 Aucun serveur n’est nécessaire. La progression de chaque élève reste dans son navigateur
 (`localStorage`) ; il peut l’exporter en JSON depuis la page d’accueil.
 
+### Tous les cours d’exemple, sur GitHub Pages
+
+La CI du dépôt (`.github/workflows/ci.yml`) lance `npm test` à chaque push et pull request. Sur
+`main`, une fois les tests passés, elle construit tous les cours de `courses/` avec
+`npm run build:site` et les publie sur GitHub Pages, chacun à sa propre adresse :
+
+```
+https://<compte>.github.io/<dépôt>/            la liste des cours
+https://<compte>.github.io/<dépôt>/fusee/      un cours
+```
+
+Il faut l’activer une fois : dans le dépôt GitHub, *Settings → Pages → Build and deployment →
+Source : GitHub Actions*. Dans un fork, la même CI publie les cours du fork.
+
 Le cours publié contient le code de la bibliothèque. La licence MIT demande seulement de
 garder la mention de copyright et le texte de la licence dans les copies du code de coursekit.
 

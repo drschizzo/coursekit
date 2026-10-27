@@ -4,7 +4,11 @@
 // prediction, written explanations, workshop and test invitations), the
 // glossary tooltips and the timeline. Taken from avbd's course/tourUI.ts.
 
-import type { Capsule, CourseDef, DiagramEnv, Glossary, LabelSet, Stop, Timeline, Vals, Control, Confidence } from '@coursekit/core';
+import {
+  STOP_KINDS, assertNever, captionText, tr,
+  type CardStop, type Capsule, type Confidence, type Control, type CourseDef, type DiagramEnv, type ExplainStop, type Glossary,
+  type LabStop, type LabelSet, type QuizStop, type Reading, type ReviewStop, type Stop, type TestStop, type Timeline, type TryStop, type Vals,
+} from '@coursekit/core';
 import { DH, DW } from '@coursekit/diagrams';
 import { h, esc } from './dom.ts';
 import { highlight, highlightLive, decimals } from './highlight.ts';
@@ -30,13 +34,13 @@ export interface PanelHooks {
   onPauses(on: boolean): void;
   onStepMode(on: boolean): void;
   onLive(key: string, v: number, until: number): void;
-  onCard(st: Stop): void;
+  onCard(st: CardStop): void;
   onQuiz(id: string, ok: boolean, conf: Confidence | null): void;
   onMission(id: string): void;
   onPredict(id: string, i: number): void;
   onExplain(id: string, patch: { text?: string; self?: 0 | 1 | 2 }): void;
   /** questions to ask in a review pause (chosen when it is reached) */
-  onReview(st: Stop): Stop[];
+  onReview(st: ReviewStop): QuizStop[];
   onMenu(): void;
   onLab(exercise?: string): void;
   onTest(kind: 'pre' | 'post'): void;
@@ -54,6 +58,7 @@ interface LiveVal { el: HTMLElement; key: string; min: number; max: number; step
 
 export class Panel {
   root: HTMLElement;
+  private r: Reading;
   private tl: Timeline;
   private hooks: PanelHooks;
   private x: PanelContext;
@@ -83,6 +88,7 @@ export class Panel {
   private tip: HTMLElement;
   private segs: { el: HTMLElement; fill: HTMLElement; t0: number; t1: number }[] = [];
   private marks: HTMLElement[] = [];
+  private markStops: Stop[] = [];
 
   private capIdx = -1;
   private capTok = 0;
@@ -103,8 +109,9 @@ export class Panel {
   private barEl!: HTMLElement;
   private roomEl!: HTMLElement;
 
-  constructor(tl: Timeline, hooks: PanelHooks, x: PanelContext) {
-    this.tl = tl; this.hooks = hooks; this.x = x;
+  constructor(r: Reading, hooks: PanelHooks, x: PanelContext) {
+    const tl = r.tl;
+    this.r = r; this.tl = tl; this.hooks = hooks; this.x = x;
     const L = x.labels;
     this.root = h('div', 'course hidden');
 
@@ -116,22 +123,22 @@ export class Panel {
     const actions = h('div', 'c-actions');
     this.stepBtn = h('button', 'c-chip on') as HTMLButtonElement;
     this.stepBtn.innerHTML = `<span class="sw"><i></i></span>${esc(L.stepMode)}`;
-    this.stepBtn.title = 'Activé : la visite attend que vous cliquiez sur « Suivant » à chaque étape. Désactivé : lecture continue.';
-    this.stepBtn.onclick = () => hooks.onStepMode(!tl.stepMode);
+    this.stepBtn.title = L.stepModeTip;
+    this.stepBtn.onclick = () => hooks.onStepMode(!r.stepMode);
     this.pausesBtn = h('button', 'c-chip on') as HTMLButtonElement;
     this.pausesBtn.innerHTML = `<span class="sw"><i></i></span>${esc(L.pauses)}`;
-    this.pausesBtn.title = 'La visite s’arrête pour les questions, les expériences et les exercices (repères sur la frise)';
-    this.pausesBtn.onclick = () => hooks.onPauses(!tl.pauses);
+    this.pausesBtn.title = L.pausesTip;
+    this.pausesBtn.onclick = () => hooks.onPauses(!r.pauses);
     const gloss = h('button', 'c-chip', esc(L.glossary)) as HTMLButtonElement;
-    gloss.title = 'Tous les termes du cours (G)';
+    gloss.title = L.glossaryTip;
     gloss.onclick = () => hooks.onGlossary();
     const menu = h('button', 'c-chip', esc(L.menu)) as HTMLButtonElement;
-    menu.title = 'Modules, chapitres, boîte à outils, fiches et progression (M)';
+    menu.title = L.menuTip;
     menu.onclick = () => hooks.onMenu();
     actions.append(this.stepBtn, this.pausesBtn, gloss, menu);
     if (x.course.exercises?.length) {
       const lab = h('button', 'c-chip', esc(L.workshop)) as HTMLButtonElement;
-      lab.title = 'Les exercices de l’atelier (L)';
+      lab.title = L.workshopTip;
       lab.onclick = () => hooks.onLab();
       actions.append(lab);
     }
@@ -144,14 +151,14 @@ export class Panel {
     this.hudEl = h('div', 'c-hud');
     this.codeEl = h('pre', 'c-code');
     this.toolsEl = h('div', 'c-tools');
-    this.liveHint = h('div', 'c-livehint hidden', '↔ Les valeurs soulignées sont modifiables : faites-les glisser, ou cliquez pour taper un nombre.');
+    this.liveHint = h('div', 'c-livehint hidden', esc(L.liveHint));
     this.tryEl = h('div', 'c-try hidden');
     this.navEl = h('div', 'c-nav');
     this.prevBtn = h('button', 'c-btn ghost', esc(L.prev)) as HTMLButtonElement;
-    this.prevBtn.title = 'Étape précédente (←)';
+    this.prevBtn.title = L.prevTip;
     this.prevBtn.onclick = () => hooks.onPrev();
     this.nextBtn = h('button', 'c-btn go', esc(L.next)) as HTMLButtonElement;
-    this.nextBtn.title = 'Étape suivante (→)';
+    this.nextBtn.title = L.nextTip;
     this.nextBtn.onclick = () => hooks.onNext();
     this.navEl.append(this.prevBtn, h('span', 'c-step'), this.nextBtn);
     this.cap = h('div', 'c-cap panel');
@@ -164,12 +171,12 @@ export class Panel {
     this.sizeCanvas();
 
     this.playBtn = h('button', 'c-play', '❚❚') as HTMLButtonElement;
-    this.playBtn.title = 'Mettre en pause les animations';
+    this.playBtn.title = L.playTip;
     this.playBtn.onclick = () => hooks.onToggle();
     const mods = h('div', 'c-mods');
     const chaps = h('div', 'c-chaps');
     const timeline = h('div', 'c-timeline');
-    timeline.title = 'Cliquer pour aller à un chapitre';
+    timeline.title = L.timelineTip;
     timeline.append(mods, chaps);
     timeline.onclick = (ev) => {
       const r = chaps.getBoundingClientRect();
@@ -217,10 +224,11 @@ export class Panel {
       l.title = `${x.moduleLabel(i)} · ${m.title}`;
       mods.append(l);
     });
-    this.marks = tl.stops.filter((s) => s.kind !== 'card').map((st) => {
+    this.markStops = tl.stops.filter((s) => s.kind !== 'card');
+    this.marks = this.markStops.map((st) => {
       const m = h('b', `stop-mark ${st.kind}`);
       m.style.left = `${(st.t / tl.duration) * 100}%`;
-      m.title = st.kind === 'quiz' ? 'Question' : st.kind === 'review' ? 'Révision' : st.kind === 'explain' ? 'Explication écrite' : st.kind === 'lab' ? `Atelier : ${hooks.labStatus(st.lab!).title}` : st.kind === 'test' ? st.title : `Expérience : ${st.title}`;
+      m.title = this.markTitle(st);
       m.onclick = (ev) => { ev.stopPropagation(); hooks.onStop(st); };
       timeline.append(m);
       return m;
@@ -231,13 +239,14 @@ export class Panel {
       const r = this.cv.getBoundingClientRect();
       return { x: ((ev.clientX - r.left) / r.width) * DW, y: ((ev.clientY - r.top) / r.height) * DH };
     };
-    this.cv.addEventListener('pointermove', (ev) => { if (tl.stop?.diag) tl.ptr = toDiag(ev); });
-    this.cv.addEventListener('pointerleave', () => { if (tl.stop?.diag) tl.ptr = null; });
+    const reacts = () => r.stop?.kind === 'try' && !!r.stop.diag;
+    this.cv.addEventListener('pointermove', (ev) => { if (reacts()) r.ptr = toDiag(ev); });
+    this.cv.addEventListener('pointerleave', () => { if (reacts()) r.ptr = null; });
     this.cv.addEventListener('pointerdown', (ev) => {
-      if (!tl.stop?.diag) return;
+      if (!reacts()) return;
       const p = toDiag(ev);
-      tl.ptr = p;
-      tl.hits.add(`${Math.floor(p.x / 20)},${Math.floor(p.y / 20)}`);
+      r.ptr = p;
+      r.hits.add(`${Math.floor(p.x / 20)},${Math.floor(p.y / 20)}`);
     });
 
     // glossary tooltips
@@ -247,7 +256,7 @@ export class Panel {
       this.tip.replaceChildren(h('b', undefined, esc(t.name)), h('p', undefined, esc(t.def)));
       const c = t.tool ? x.capsule(t.tool) : null;
       if (c) {
-        const b = h('button', 'c-link', `Fiche : ${esc(c.title)}`) as HTMLButtonElement;
+        const b = h('button', 'c-link', esc(tr(L, 'capsuleLink', { title: c.title }))) as HTMLButtonElement;
         b.onmousedown = (ev) => { ev.preventDefault(); hooks.onCapsule(c.id); };
         this.tip.append(b);
       }
@@ -269,6 +278,25 @@ export class Panel {
     this.tip.addEventListener('mouseout', hideTip);
   }
 
+  /** What a mark of the timeline says about its pause. */
+  private markTitle(st: Stop): string {
+    const L = this.x.labels;
+    switch (st.kind) {
+      case 'quiz': return L.markQuiz;
+      case 'review': return L.markReview;
+      case 'explain': return L.markExplain;
+      case 'lab': return tr(L, 'markLab', { title: this.hooks.labStatus(st.lab).title });
+      case 'test': case 'card': return st.title;
+      case 'try': return tr(L, 'markTry', { title: st.title });
+      default: return assertNever(st);
+    }
+  }
+
+  /** The diagram reacts to the pointer: an experiment that says so, once its prediction is made. */
+  private diagLive(st: Stop | null): boolean {
+    return st?.kind === 'try' && !!st.diag && (this.r.state(st).predicted != null || !st.predict);
+  }
+
   /** The drawing space stays DW × DH; the backing store follows the CSS size. */
   private sizeCanvas(): void {
     const w = this.cv.clientWidth || DW;
@@ -288,14 +316,14 @@ export class Panel {
 
   setPauses(on: boolean): void {
     this.pausesBtn.classList.toggle('on', on);
-    for (const m of this.marks) m.classList.toggle('off', !on);
+    this.marks.forEach((m, i) => m.classList.toggle('off', !on && STOP_KINDS[this.markStops[i].kind].skippable));
   }
 
   setStepMode(on: boolean): void { this.stepBtn.classList.toggle('on', on); }
 
   setViewFree(free: boolean): void {
     this.viewEl.classList.toggle('free', free);
-    this.viewEl.textContent = free ? '⟲ Revenir à la vue de départ' : '';
+    this.viewEl.textContent = free ? this.x.labels.viewReset : '';
     this.viewEl.disabled = !free;
   }
 
@@ -336,7 +364,7 @@ export class Panel {
       this.kicker.textContent = c.kicker;
       this.title.textContent = c.title;
       const seen = new Set<string>();
-      this.body.innerHTML = this.x.glossary.rich(c.text, seen);
+      this.body.innerHTML = this.x.glossary.rich(captionText(c), seen);
       this.note.innerHTML = c.note ? this.x.glossary.rich(c.note, seen) : '';
       this.note.classList.toggle('hidden', !c.note);
       this.codeEl.innerHTML = c.code ? highlightLive(c.code) : '';
@@ -352,7 +380,7 @@ export class Panel {
         if (!cp) continue;
         const b = h('button', `c-toolbtn${this.hooks.toolDone(id) ? ' done' : ''}`) as HTMLButtonElement;
         b.innerHTML = `<span>${esc(this.x.labels.reminder)}</span>${esc(cp.title)}`;
-        b.title = `Ouvrir la fiche de la boîte à outils : ${cp.goal}`;
+        b.title = tr(this.x.labels, 'toolTip', { goal: cp.goal });
         b.onclick = () => this.hooks.onCapsule(id);
         this.toolsEl.append(b);
       }
@@ -380,7 +408,7 @@ export class Panel {
         this.hooks.onLive(L.key, v, end);
         this.ctlSync[L.key]?.(v);
       };
-      el.title = `${L.key} : faire glisser pour modifier (${L.min} à ${L.max})`;
+      el.title = tr(this.x.labels, 'liveValTip', { key: L.key, min: L.min, max: L.max });
       el.addEventListener('pointerdown', (ev) => {
         if (el.isContentEditable) return;
         ev.preventDefault();
@@ -430,7 +458,7 @@ export class Panel {
 
   private showStop(st: Stop | null): void {
     this.ctlSync = {}; this.goalEls = null; this.quizKey = null; this.goBtn = null; this.tagEl = null; this.conclEl = null;
-    this.diagEl.classList.toggle('live', !!st?.diag && (st.predicted != null || !st.predict));
+    this.diagEl.classList.toggle('live', this.diagLive(st));
     this.root.classList.toggle('in-card', st?.kind === 'card');
     if (!st || st.kind === 'card') {
       this.tryEl.classList.add('hidden');
@@ -441,12 +469,15 @@ export class Panel {
     const el = this.tryEl;
     el.replaceChildren();
     el.classList.remove('hidden');
-    if (st.kind === 'quiz') this.showQuiz(st);
-    else if (st.kind === 'review') this.showReview(st);
-    else if (st.kind === 'explain') this.showExplain(st);
-    else if (st.kind === 'lab') this.showLab(st);
-    else if (st.kind === 'test') this.showTest(st);
-    else this.showTry(st);
+    switch (st.kind) {
+      case 'quiz': this.showQuiz(st); break;
+      case 'review': this.showReview(st); break;
+      case 'explain': this.showExplain(st); break;
+      case 'lab': this.showLab(st); break;
+      case 'test': this.showTest(st); break;
+      case 'try': this.showTry(st); break;
+      default: assertNever(st);
+    }
     requestAnimationFrame(() => el.scrollIntoView({ block: 'nearest' }));
   }
 
@@ -454,7 +485,7 @@ export class Panel {
     const foot = h('div', 'try-foot');
     const hint = h('small');
     const go = h('button', `c-btn ${ready ? 'go ready' : 'ghost'}`, esc(label)) as HTMLButtonElement;
-    go.title = 'Continuer (Espace)';
+    go.title = this.x.labels.continueTip;
     go.onclick = () => this.hooks.onResume();
     foot.append(hint, go);
     return { foot, go, hint };
@@ -462,9 +493,11 @@ export class Panel {
 
   // ---- experiment (with a prediction first)
 
-  private showTry(st: Stop): void {
+  private showTry(st: TryStop): void {
     const el = this.tryEl;
-    const head = h('div', 'try-head', `<span class="try-tag">${st.goals ? 'Expérience' : 'À vous'}</span>`);
+    const L = this.x.labels;
+    const s = this.r.state(st);
+    const head = h('div', 'try-head', `<span class="try-tag">${esc(st.goals ? L.tagExperiment : L.tagYourTurn)}</span>`);
     head.append(st.title);
     this.tagEl = head.firstChild as HTMLElement;
     el.append(head);
@@ -476,15 +509,15 @@ export class Panel {
     const showRest = () => {
       rest.replaceChildren();
       const p = h('p');
-      p.innerHTML = this.x.glossary.rich(st.prompt ?? '');
+      p.innerHTML = this.x.glossary.rich(st.prompt);
       rest.append(p);
       if (st.goals) {
-        st.reached ||= st.goals.map(() => false);
+        s.reached ||= st.goals.map(() => false);
         const ul = h('ul', 'try-goals');
         this.goalEls = st.goals.map((g, i) => {
           const li = h('li');
           li.textContent = g.label;
-          li.classList.toggle('ok', !!st.reached![i]);
+          li.classList.toggle('ok', !!s.reached![i]);
           ul.append(li);
           return li;
         });
@@ -494,19 +527,19 @@ export class Panel {
       this.conclEl = h('div', 'try-concl hidden');
       rest.append(this.conclEl);
       if (!st.goals && st.conclusion) {
-        const b = h('button', 'c-link', 'Voir ce qu’il fallait observer') as HTMLButtonElement;
+        const b = h('button', 'c-link', esc(L.seeConclusion)) as HTMLButtonElement;
         b.onclick = () => { this.showConclusion(st); b.remove(); };
         rest.append(b);
       }
-      hint.textContent = st.diag ? 'le schéma réagit à la souris' : st.controls.some((c) => stageKeys.has(c.key)) ? 'la scène est recalculée à chaque changement' : '';
-      if (st.goals && st.reached!.every(Boolean)) this.missionDone(st, false);
+      hint.textContent = st.diag ? L.hintDiag : st.controls.some((c) => stageKeys.has(c.key)) ? L.hintStage : '';
+      if (st.goals && s.reached!.every(Boolean)) this.missionDone(st, false);
       this.diagEl.classList.toggle('live', !!st.diag);
       this.updateGoals();
     };
 
-    if (st.predict && st.predicted == null) {
+    if (st.predict && s.predicted == null) {
       const box = h('div', 'try-predict');
-      box.append(h('p', 'quiz-q', `<b>Votre prédiction.</b> ${esc(st.predict.question)}`));
+      box.append(h('p', 'quiz-q', tr(L, 'yourPrediction', { question: esc(st.predict.question) })));
       const list = h('div', 'quiz-choices');
       st.predict.choices.forEach((txt, i) => {
         const b = h('button', 'quiz-choice', `<kbd>${i + 1}</kbd>`) as HTMLButtonElement;
@@ -515,36 +548,37 @@ export class Panel {
         list.append(b);
       });
       const pick = (i: number) => {
-        st.predicted = i;
+        s.predicted = i;
         this.hooks.onPredict(st.id, i);
-        box.replaceChildren(h('p', 'try-pred', `Votre prédiction : <b>${esc(st.predict!.choices[i])}</b>. Vérifiez-la avec l’expérience.`));
+        box.replaceChildren(h('p', 'try-pred', tr(L, 'predictionMade', { choice: esc(st.predict!.choices[i]) })));
         this.quizKey = null;
         showRest();
       };
       this.quizKey = (i) => { if (i < st.predict!.choices.length) pick(i); };
-      box.append(list, h('small', 'try-note', 'Il n’y a pas de mauvaise réponse à ce stade : la prédiction sert à confronter votre idée à l’expérience.'));
+      box.append(list, h('small', 'try-note', esc(L.predictNote)));
       el.append(box, rest, foot);
-      hint.textContent = 'faites une prédiction pour commencer';
+      hint.textContent = L.predictHint;
     } else {
-      if (st.predict && st.predicted != null) el.append(h('p', 'try-pred', `Votre prédiction : <b>${esc(st.predict.choices[st.predicted])}</b>.`));
+      if (st.predict && s.predicted != null) el.append(h('p', 'try-pred', tr(L, 'predictionWas', { choice: esc(st.predict.choices[s.predicted]) })));
       el.append(rest, foot);
       showRest();
     }
   }
 
-  private showConclusion(st: Stop): void {
+  private showConclusion(st: TryStop): void {
     if (!this.conclEl || !st.conclusion) return;
+    const L = this.x.labels;
+    const predicted = this.r.state(st).predicted;
     let txt = '';
-    if (st.predict && st.predicted != null && st.predict.answer != null) {
-      txt = st.predicted === st.predict.answer
-        ? '<b>Votre prédiction était juste.</b> '
-        : `<b>Votre prédiction était différente</b> (la réponse attendue était : ${esc(st.predict.choices[st.predict.answer])}). `;
+    if (st.predict && predicted != null && st.predict.answer != null) {
+      txt = predicted === st.predict.answer ? L.predictionRight : tr(L, 'predictionWrong', { answer: esc(st.predict.choices[st.predict.answer]) });
     }
     this.conclEl.innerHTML = `${txt}${this.x.glossary.rich(st.conclusion)}`;
     this.conclEl.classList.remove('hidden');
   }
 
-  private control(st: Stop, c: Control): HTMLElement {
+  private control(st: TryStop, c: Control): HTMLElement {
+    const ov = this.r.state(st).ov;
     const row = h('label', `try-row ${c.type}`);
     const name = h('span', 'try-name');
     name.textContent = c.label;
@@ -556,19 +590,19 @@ export class Panel {
       const toV = (p: number) => (c.log ? Math.round((min * Math.pow(max / min, p / 1000)) / step) * step : p);
       const toP = (v: number) => (c.log ? (1000 * Math.log(Math.max(min, v) / min)) / Math.log(max / min) : v);
       Object.assign(inp, c.log ? { type: 'range', min: '0', max: '1000', step: '1' } : { type: 'range', min: String(min), max: String(max), step: String(step) });
-      inp.value = String(toP(st.ov[c.key]));
+      inp.value = String(toP(ov[c.key]));
       const show = (v: number) => { out.textContent = c.fmt ? c.fmt(v) : String(v); };
-      const sync = () => { const v = Math.min(max, Math.max(min, toV(+inp.value))); st.ov[c.key] = v; show(v); };
+      const sync = () => { const v = Math.min(max, Math.max(min, toV(+inp.value))); ov[c.key] = v; show(v); };
       inp.addEventListener('input', sync);
-      show(st.ov[c.key]);
+      show(ov[c.key]);
       this.ctlSync[c.key] = (v) => { inp.value = String(toP(v)); show(v); };
       row.append(name, inp, out);
     } else if (c.type === 'choice') {
       const seg = h('div', 'try-seg');
-      const paint = () => { [...seg.children].forEach((b, i) => b.classList.toggle('on', st.ov[c.key] === c.options![i].value)); };
+      const paint = () => { [...seg.children].forEach((b, i) => b.classList.toggle('on', ov[c.key] === c.options![i].value)); };
       for (const o of c.options ?? []) {
         const b = h('button', undefined, esc(o.label));
-        b.onclick = (ev) => { ev.preventDefault(); st.ov[c.key] = o.value; paint(); };
+        b.onclick = (ev) => { ev.preventDefault(); ov[c.key] = o.value; paint(); };
         seg.append(b);
       }
       paint();
@@ -578,9 +612,9 @@ export class Panel {
       const sw = h('button', 'try-sw') as HTMLButtonElement;
       sw.type = 'button';
       sw.innerHTML = '<span class="sw"><i></i></span>';
-      const on = () => Math.abs(st.ov[c.key] - (c.on ?? 1)) < Math.abs(st.ov[c.key] - (c.off ?? 0));
+      const on = () => Math.abs(ov[c.key] - (c.on ?? 1)) < Math.abs(ov[c.key] - (c.off ?? 0));
       const sync = () => sw.classList.toggle('on', on());
-      sw.onclick = (ev) => { ev.preventDefault(); st.ov[c.key] = on() ? (c.off ?? 0) : (c.on ?? 1); sync(); };
+      sw.onclick = (ev) => { ev.preventDefault(); ov[c.key] = on() ? (c.off ?? 0) : (c.on ?? 1); sync(); };
       sync();
       row.append(sw, name);
     }
@@ -588,37 +622,38 @@ export class Panel {
   }
 
   updateGoals(): void {
-    const st = this.tl.stop;
-    if (!st || !st.goals || !this.goalEls) return;
-    const x = { v: st.ov, ptr: this.tl.ptr, hits: this.tl.hits };
+    const st = this.r.stop;
+    if (st?.kind !== 'try' || !st.goals || !this.goalEls) return;
+    const s = this.r.state(st);
+    const x = { v: s.ov, ptr: this.r.ptr, hits: this.r.hits };
     let hit = false;
     st.goals.forEach((g, i) => {
-      const open = !st.seq || i === 0 || st.reached![i - 1];
-      this.goalEls![i].classList.toggle('locked', !open && !st.reached![i]);
-      if (st.reached![i] || !open) return;
+      const open = !st.seq || i === 0 || s.reached![i - 1];
+      this.goalEls![i].classList.toggle('locked', !open && !s.reached![i]);
+      if (s.reached![i] || !open) return;
       let ok = false;
       try { ok = !!g.test(x); } catch { /* pointer missing */ }
-      if (ok) { st.reached![i] = true; this.goalEls![i].classList.add('ok'); hit = true; }
+      if (ok) { s.reached![i] = true; this.goalEls![i].classList.add('ok'); hit = true; }
     });
-    if (hit && st.reached!.every(Boolean)) this.missionDone(st, true);
+    if (hit && s.reached!.every(Boolean)) this.missionDone(st, true);
   }
 
-  private missionDone(st: Stop, fresh: boolean): void {
+  private missionDone(st: TryStop, fresh: boolean): void {
     if (this.goBtn) { this.goBtn.className = 'c-btn go ready'; this.goBtn.textContent = this.x.labels.continue; }
-    if (this.tagEl) { this.tagEl.textContent = 'Terminée ✓'; this.tagEl.classList.add('ok'); }
+    if (this.tagEl) { this.tagEl.textContent = this.x.labels.tagDone; this.tagEl.classList.add('ok'); }
     this.showConclusion(st);
     if (fresh) this.hooks.onMission(st.id);
   }
 
   // ---- question
 
-  private showQuiz(st: Stop): void {
-    const el = this.tryEl, q = st.quiz!;
+  private showQuiz(st: QuizStop): void {
+    const el = this.tryEl, q = st.quiz, L = this.x.labels;
     const box = h('div');
-    const { foot, go, hint } = this.foot(this.x.labels.skip);
-    hint.textContent = q.kind === 'choice' ? 'Touches 1 à 4 pour répondre' : '';
-    const r = renderQuiz(box, q, {
-      feedback: true, confidence: true, head: 'Qu’en pensez-vous ?',
+    const { foot, go, hint } = this.foot(L.skip);
+    hint.textContent = q.kind === 'choice' ? L.keysHint : '';
+    const r = renderQuiz(box, q, L, {
+      feedback: true, confidence: true, head: L.quizHead,
       onDone: (res) => {
         this.hooks.onQuiz(st.id, res.ok, res.conf);
         go.className = 'c-btn go ready'; go.textContent = this.x.labels.continue; go.focus();
@@ -632,13 +667,13 @@ export class Panel {
 
   // ---- review: questions from earlier modules
 
-  private showReview(st: Stop): void {
-    const el = this.tryEl;
+  private showReview(st: ReviewStop): void {
+    const el = this.tryEl, L = this.x.labels;
     const qs = this.hooks.onReview(st);
-    const { foot, go, hint } = this.foot('Passer la révision');
+    const { foot, go, hint } = this.foot(L.skipReview);
     if (!qs.length) {
-      el.append(h('div', 'try-head', '<span class="try-tag quiz">Révision</span>Rien à revoir pour l’instant'),
-        h('p', undefined, 'Aucune question des modules précédents n’est à revoir. Vous pouvez continuer.'));
+      el.append(h('div', 'try-head', `<span class="try-tag quiz">${esc(L.reviewTitle)}</span>${esc(L.nothingToReview)}`),
+        h('p', undefined, esc(L.nothingToReviewText)));
       go.className = 'c-btn go ready'; go.textContent = this.x.labels.continue;
       el.append(foot);
       return;
@@ -647,8 +682,8 @@ export class Panel {
     let k = 0, ok = 0;
     const next = () => {
       if (k >= qs.length) {
-        box.replaceChildren(h('div', 'try-head', '<span class="try-tag ok">Révision terminée</span>'),
-          h('p', undefined, `${ok} bonne${ok > 1 ? 's' : ''} réponse${ok > 1 ? 's' : ''} sur ${qs.length}. Les questions manquées reviendront lors d’une prochaine révision.`));
+        box.replaceChildren(h('div', 'try-head', `<span class="try-tag ok">${esc(L.reviewDone)}</span>`),
+          h('p', undefined, esc(tr(L, 'reviewScore', { ok, n: qs.length }))));
         go.className = 'c-btn go ready'; go.textContent = this.x.labels.continue; go.focus();
         hint.textContent = '';
         this.quizKey = null;
@@ -656,12 +691,12 @@ export class Panel {
       }
       const q = qs[k];
       const qBox = h('div');
-      const r = renderQuiz(qBox, q.quiz!, {
-        feedback: true, confidence: true, tag: 'Révision', head: `Question ${k + 1} / ${qs.length} · ${this.x.course.modules[q.quiz!.module]?.title ?? ''}`,
+      const r = renderQuiz(qBox, q.quiz, L, {
+        feedback: true, confidence: true, tag: L.reviewTitle, head: tr(L, 'reviewQuestionHead', { i: k + 1, n: qs.length, module: this.x.course.modules[q.quiz.module]?.title ?? '' }),
         onDone: (res) => {
           if (res.ok) ok++;
           this.hooks.onQuiz(q.id, res.ok, res.conf);
-          const more = h('button', 'c-btn go', k + 1 < qs.length ? 'Question suivante ▶' : 'Terminer la révision') as HTMLButtonElement;
+          const more = h('button', 'c-btn go', esc(k + 1 < qs.length ? L.nextQuestion : L.endReview)) as HTMLButtonElement;
           more.onclick = () => { k++; next(); };
           qBox.append(more);
           more.focus();
@@ -671,34 +706,34 @@ export class Panel {
       this.quizKey = (i) => r.key(i);
       box.replaceChildren(qBox);
     };
-    hint.textContent = 'Touches 1 à 4 pour répondre';
+    hint.textContent = L.keysHint;
     el.append(box, foot);
     next();
   }
 
   // ---- written explanation
 
-  private showExplain(st: Stop): void {
-    const el = this.tryEl, ex = st.explain!;
-    const head = h('div', 'try-head', '<span class="try-tag">Explication</span>');
+  private showExplain(st: ExplainStop): void {
+    const el = this.tryEl, ex = st.explain, L = this.x.labels;
+    const head = h('div', 'try-head', `<span class="try-tag">${esc(L.tagExplain)}</span>`);
     head.append(st.title);
     const p = h('p');
     p.innerHTML = this.x.glossary.rich(ex.prompt);
     const ta = h('textarea', 'try-text') as HTMLTextAreaElement;
-    ta.placeholder = 'Écrivez votre réponse ici (quelques phrases suffisent).';
+    ta.placeholder = L.explainPlaceholder;
     ta.value = this.hooks.explainText(st.id);
     ta.addEventListener('keydown', (ev) => ev.stopPropagation());
-    const cmp = h('button', 'c-btn', 'Comparer avec une réponse modèle') as HTMLButtonElement;
+    const cmp = h('button', 'c-btn', esc(L.compareModel)) as HTMLButtonElement;
     const model = h('div', 'try-model hidden');
     const { foot, go, hint } = this.foot(this.x.labels.skip);
-    const sync = () => { cmp.disabled = ta.value.trim().length < 20; hint.textContent = cmp.disabled ? 'au moins une phrase complète' : ''; };
+    const sync = () => { cmp.disabled = ta.value.trim().length < 20; hint.textContent = cmp.disabled ? L.minSentence : ''; };
     ta.addEventListener('input', () => { sync(); this.hooks.onExplain(st.id, { text: ta.value }); });
     cmp.onclick = () => {
       this.hooks.onExplain(st.id, { text: ta.value });
-      model.replaceChildren(h('b', undefined, 'Une réponse possible'), h('p', undefined, this.x.glossary.rich(ex.model)),
-        h('p', 'try-note', 'Comparez avec votre réponse : contient-elle les mêmes idées, même formulées autrement ?'));
+      model.replaceChildren(h('b', undefined, esc(L.possibleAnswer)), h('p', undefined, this.x.glossary.rich(ex.model)),
+        h('p', 'try-note', esc(L.compareNote)));
       const row = h('div', 'try-self');
-      const opts: [string, 0 | 1 | 2][] = [['Oui, l’essentiel y est', 2], ['En partie', 1], ['Non, il me manquait l’idée principale', 0]];
+      const opts: [string, 0 | 1 | 2][] = [[L.selfYes, 2], [L.selfPartly, 1], [L.selfNo, 0]];
       for (const [label, v] of opts) {
         const b = h('button', 'c-btn', esc(label)) as HTMLButtonElement;
         b.onclick = () => {
@@ -706,7 +741,7 @@ export class Panel {
           [...row.children].forEach((x) => x.classList.remove('on'));
           b.classList.add('on');
           go.className = 'c-btn go ready'; go.textContent = this.x.labels.continue;
-          if (v === 0) row.after(h('p', 'try-note', 'Relisez les étapes concernées avant de continuer : le sommaire permet d’y revenir.'));
+          if (v === 0) row.after(h('p', 'try-note', esc(L.rereadNote)));
         };
         row.append(b);
       }
@@ -721,32 +756,32 @@ export class Panel {
 
   // ---- invitation to the workshop
 
-  private showLab(st: Stop): void {
-    const el = this.tryEl;
-    const s = this.hooks.labStatus(st.lab!);
-    const head = h('div', 'try-head', `<span class="try-tag${s.done ? ' ok' : ''}">${s.done ? 'Réussi ✓' : 'Atelier'}</span>`);
+  private showLab(st: LabStop): void {
+    const el = this.tryEl, L = this.x.labels;
+    const s = this.hooks.labStatus(st.lab);
+    const head = h('div', 'try-head', `<span class="try-tag${s.done ? ' ok' : ''}">${esc(s.done ? L.labDoneTag : L.labTitle)}</span>`);
     head.append(s.title);
     const p = h('p');
-    p.innerHTML = this.x.glossary.rich(st.prompt ?? '');
-    const open = h('button', 'c-btn go', s.done ? 'Revoir dans l’atelier' : 'Ouvrir l’atelier ▶') as HTMLButtonElement;
+    p.innerHTML = this.x.glossary.rich(st.prompt);
+    const open = h('button', 'c-btn go', esc(s.done ? L.labReview : L.labOpen)) as HTMLButtonElement;
     open.onclick = () => this.hooks.onLab(st.lab);
-    const { foot, hint } = this.foot(s.done ? this.x.labels.continue : this.x.labels.later, s.done);
-    hint.textContent = s.done ? '' : 'l’exercice reste disponible dans l’atelier';
+    const { foot, hint } = this.foot(s.done ? L.continue : L.later, s.done);
+    hint.textContent = s.done ? '' : L.labLaterHint;
     el.append(head, p, open, foot);
   }
 
   // ---- invitation to a test
 
-  private showTest(st: Stop): void {
-    const el = this.tryEl;
-    const done = this.hooks.testDone(st.test!);
-    const head = h('div', 'try-head', `<span class="try-tag${done ? ' ok' : ' quiz'}">${done ? 'Fait ✓' : 'Test'}</span>`);
+  private showTest(st: TestStop): void {
+    const el = this.tryEl, L = this.x.labels;
+    const done = this.hooks.testDone(st.test);
+    const head = h('div', 'try-head', `<span class="try-tag${done ? ' ok' : ' quiz'}">${esc(done ? L.testDoneTag : L.testTag)}</span>`);
     head.append(st.title);
     const p = h('p');
-    p.textContent = st.prompt ?? '';
-    const open = h('button', 'c-btn go', done ? 'Repasser le test' : 'Commencer le test ▶') as HTMLButtonElement;
-    open.onclick = () => this.hooks.onTest(st.test!);
-    const { foot } = this.foot(done ? this.x.labels.continue : this.x.labels.later, done);
+    p.textContent = st.prompt;
+    const open = h('button', 'c-btn go', esc(done ? L.testRetake : L.testStart)) as HTMLButtonElement;
+    open.onclick = () => this.hooks.onTest(st.test);
+    const { foot } = this.foot(done ? L.continue : L.later, done);
     el.append(head, p, open, foot);
   }
 
@@ -755,7 +790,7 @@ export class Panel {
   // ----------------------------------------------------------------- frame
 
   update(t: number, v: Vals, playing: boolean): void {
-    const tl = this.tl;
+    const tl = this.tl, r = this.r;
     const ci = tl.capAt(t);
     if (ci !== this.capIdx) this.setCaption(ci);
     this.hudEl.textContent = this.hud ? safe(() => this.hud!(v)) : '';
@@ -770,11 +805,11 @@ export class Panel {
     }
     if (dg) {
       this.sizeCanvas();
-      const live = tl.stop?.diag && (tl.stop.predicted != null || !tl.stop.predict);
-      this.x.draw(dg.name, this.ctx, { t: t - dg.t0 + tl.extra, v, ptr: live ? tl.ptr : null, hits: tl.hits, arg: dg.arg, model: this.x.course.model });
+      const live = this.diagLive(r.stop);
+      this.x.draw(dg.name, this.ctx, { t: t - dg.t0 + r.extra, v, ptr: live ? r.ptr : null, hits: r.hits, arg: dg.arg, model: this.x.course.model });
     }
 
-    if (tl.stop !== this.shownStop) { this.shownStop = tl.stop; this.showStop(tl.stop); }
+    if (r.stop !== this.shownStop) { this.shownStop = r.stop; this.showStop(r.stop); }
     this.updateGoals();
 
     for (const s of this.segs) s.fill.style.width = `${Math.min(1, Math.max(0, (t - s.t0) / (s.t1 - s.t0))) * 100}%`;
@@ -785,10 +820,10 @@ export class Panel {
       const st = tl.stepInChapter(t);
       this.clockEl.textContent = `${this.x.labels.step} ${st.i + 1} / ${st.n}`;
     }
-    this.playBtn.textContent = playing || tl.held ? '❚❚' : '▶';
-    this.root.classList.toggle('in-stop', !!tl.stop);
-    this.navEl.classList.toggle('hidden', !!tl.stop);
-    this.nextBtn.classList.toggle('waiting', tl.held);
+    this.playBtn.textContent = playing || r.held ? '❚❚' : '▶';
+    this.root.classList.toggle('in-stop', !!r.stop);
+    this.navEl.classList.toggle('hidden', !!r.stop);
+    this.nextBtn.classList.toggle('waiting', r.held);
     this.prevBtn.disabled = t < 0.5;
 
     for (const L of this.lives) {

@@ -14,7 +14,8 @@
 // its chapter explains; a picture never shows a notion before the text.
 
 import { choice, dec, defineCourse, fr, numeric, pct, type Capsule } from '@coursekit/core';
-import { pickCapsules } from '@coursekit/diagrams';
+import { CC } from '@coursekit/diagrams';
+import { pickCapsules } from '@coursekit/toolbox';
 import { choiceQ, type Exercise, type WorkshopConfig } from '@coursekit/exercises';
 import { CELL, DIAGRAMS, pow10 } from './diagrams.ts';
 import {
@@ -121,15 +122,15 @@ function visitsPreview(ctx: CanvasRenderingContext2D, mine: (() => number[]) | n
   const ref = refVisits(FORK, 200);
   const ms = legal(FORK);
   const top = Math.max(1, ...ref, ...(got ?? []).map((x) => (Number.isFinite(x) ? x : 0)));
-  ctx.fillStyle = '#e6eaf5'; ctx.textAlign = 'left';
+  ctx.fillStyle = CC.fg; ctx.textAlign = 'left';
   ctx.fillText('visites depuis la position du cours (200 simulations)', 20, 18);
-  ctx.fillStyle = '#ffb35c'; ctx.fillText('votre fonction', 20, 34);
-  ctx.fillStyle = '#7c9cff'; ctx.fillText('référence', 120, 34);
-  if (!got) { ctx.fillStyle = '#ff6b7a'; ctx.fillText(mine ? 'votre fonction lève une erreur' : 'écrivez votre fonction', 20, 54); }
+  ctx.fillStyle = CC.acc; ctx.fillText('votre fonction', 20, 34);
+  ctx.fillStyle = CC.blue; ctx.fillText('référence', 120, 34);
+  if (!got) { ctx.fillStyle = CC.red; ctx.fillText(mine ? 'votre fonction lève une erreur' : 'écrivez votre fonction', 20, 54); }
   ms.forEach((m, i) => {
     const x = 30 + i * 52, base = 200, H = 130;
     ctx.fillStyle = 'rgba(124,156,255,.55)'; ctx.fillRect(x, base - (ref[m] / top) * H, 18, (ref[m] / top) * H);
-    if (got) { const g = Math.max(0, Math.min(top, got[m] || 0)); ctx.fillStyle = '#ffb35c'; ctx.fillRect(x + 20, base - (g / top) * H, 18, (g / top) * H); }
+    if (got) { const g = Math.max(0, Math.min(top, got[m] || 0)); ctx.fillStyle = CC.acc; ctx.fillRect(x + 20, base - (g / top) * H, 18, (g / top) * H); }
     ctx.fillStyle = 'rgba(230,234,245,.6)'; ctx.textAlign = 'center'; ctx.fillText(`${CELL[m]} ${m + 1}`, x + 19, base + 14);
   });
   ctx.textAlign = 'left';
@@ -304,7 +305,8 @@ const NOISE_OPTS = [0, 0.5].map((x) => ({ label: fr(x, 1), value: x }));
 const TEMP_OPTS = [0, 2, 9].map((x) => ({ label: fr(x), value: x }));
 const finalLoss = (v: Record<string, number>) => checkpointAt(trainOf(v), 1e9).searchLoss;
 
-const course = defineCourse({
+export default defineCourse({
+  workshop,
   id: 'alphazero', version: 4, language: 'fr',
   title: 'AlphaGo, AlphaZero et AlphaNIST',
   lead: 'Comment un programme apprend-il seul à jouer au go mieux que les champions, et comment la même idée apprend-elle à un robot à assembler des pièces ? Le cours construit des versions miniatures de chaque étape : la recherche Monte-Carlo au morpion, vérifiée contre une implémentation indépendante, un petit réseau entraîné par descente de gradient, un AlphaZero qui apprend en jouant contre lui-même, et un robot qui apprend à visser un écrou. Chaque chiffre est calculé par ces programmes, sur plusieurs graines quand le hasard compte.',
@@ -834,4 +836,3 @@ const course = defineCourse({
   },
 });
 
-export default Object.assign(course, { workshop });

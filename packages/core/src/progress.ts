@@ -1,9 +1,15 @@
-// Saved progress, the spaced review of the questions, and the effort
-// estimate. Taken from avbd's course/course.ts; the store is now an
-// interface (browser storage by default), and progress is keyed by the ids
-// of the questions, experiments and exercises, never by chapter titles.
+// Saved progress and the spaced review of the questions. Taken from avbd's
+// course/course.ts; the store is an interface (browser storage by default),
+// and progress is keyed by the ids of the questions, experiments and
+// exercises, never by chapter titles — so that it survives a new version of
+// the course's content.
+//
+// What is saved has a schema version of its own, distinct from the course's
+// version: a new version of the content keeps the learner's answers, reviews,
+// experiments and exercises; only the positions on the timeline, which the
+// new content moves, start again. A new schema is migrated, never dropped.
 
-import type { Timeline } from './timeline.ts';
+import type { QuizStop, Timeline } from './timeline.ts';
 
 export interface TestRecord { done: boolean; a: Record<string, 0 | 1>; b: Record<string, 0 | 1> }
 
@@ -29,9 +35,13 @@ export interface ProgressData {
   stepMode: boolean;
 }
 
+/** What is stored: the data, its schema and the version of the content it was recorded on. */
+export interface SavedProgress { schema: number; content: number; data: ProgressData }
+
 export interface ProgressStore {
-  load(key: string): ProgressData | null;
-  save(key: string, data: ProgressData): void;
+  load(key: string): unknown;
+  save(key: string, value: unknown): void;
+  remove?(key: string): void;
 }
 
 /** Browser storage; falls back to memory when storage is off (private window, tests). */
@@ -42,12 +52,34 @@ export function browserStore(): ProgressStore {
     load(key) {
       try { const s = ls()?.getItem(key) ?? mem.get(key); return s ? JSON.parse(s) : null; } catch { return null; }
     },
-    save(key, data) {
-      const s = JSON.stringify(data);
+    save(key, value) {
+      const s = JSON.stringify(value);
       try { const st = ls(); if (st) st.setItem(key, s); else mem.set(key, s); } catch { mem.set(key, s); }
+    },
+    remove(key) {
+      mem.delete(key);
+      try { ls()?.removeItem(key); } catch { /* storage off */ }
     },
   };
 }
+
+/** A store that keeps nothing: for estimates and tests. */
+export const memoryStore = (): ProgressStore => {
+  const m = new Map<string, unknown>();
+  return { load: (k) => m.get(k) ?? null, save: (k, v) => { m.set(k, v); }, remove: (k) => { m.delete(k); } };
+};
+
+/** The schema of `ProgressData`. Raise it with a migration in `MIGRATIONS` when the shape changes. */
+export const PROGRESS_SCHEMA = 2;
+
+/**
+ * Migrations from each schema to the next: MIGRATIONS[n] turns schema n into
+ * n + 1. Schema 1 is the data saved before the schema was versioned (under the
+ * key `coursekit:<id>:v<version>`), which had the shape of schema 2.
+ */
+const MIGRATIONS: Record<number, (d: Record<string, unknown>) => Record<string, unknown>> = {
+  1: (d) => d,
+};
 
 /** Spaced review: a question in box b comes back after INTERVAL[b] review sessions. */
 const INTERVAL = [1, 1, 2, 4, 8];
@@ -57,21 +89,60 @@ export const emptyProgress = (): ProgressData => ({
   done: {}, code: {}, tools: {}, tests: {}, stepMode: true,
 });
 
+const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+
+/** Saved data, as far as it has the right shape: every field of the wrong type is left at its empty value. */
+export function sanitizeProgress(raw: unknown): ProgressData {
+  const d = emptyProgress();
+  if (!isObj(raw)) return d;
+  const out = d as unknown as Record<string, unknown>;
+  for (const k of Object.keys(d) as (keyof ProgressData)[]) {
+    const v = raw[k], empty = d[k];
+    if (typeof empty === 'number' ? typeof v === 'number' && Number.isFinite(v) : typeof empty === 'boolean' ? typeof v === 'boolean' : isObj(v)) out[k] = v;
+  }
+  return d;
+}
+
 export class Progress {
   d: ProgressData = emptyProgress();
   readonly key: string;
   private store: ProgressStore;
+  private content: number;
 
   constructor(courseId: string, version: number, store: ProgressStore = browserStore()) {
-    this.key = `coursekit:${courseId}:v${version}`;
+    this.key = `coursekit:${courseId}`;
     this.store = store;
-    const saved = store.load(this.key);
-    if (saved) Object.assign(this.d, saved);
+    this.content = version;
+    this.d = this.restore(courseId);
   }
-  save(): void { this.store.save(this.key, this.d); }
+
+  /** The saved progress, migrated to the current schema, or the progress saved before schemas (legacy key). */
+  private restore(courseId: string): ProgressData {
+    let saved = this.store.load(this.key);
+    if (!isObj(saved)) {
+      // before schemas: one key per version of the content, holding the data itself
+      for (let v = this.content; v >= 1 && !isObj(saved); v--) {
+        const old = this.store.load(`coursekit:${courseId}:v${v}`);
+        if (isObj(old)) { saved = { schema: 1, content: v, data: old }; this.store.remove?.(`coursekit:${courseId}:v${v}`); }
+      }
+    }
+    if (!isObj(saved)) return emptyProgress();
+    let schema = typeof saved.schema === 'number' ? saved.schema : 1;
+    let data = isObj(saved.data) ? saved.data : {};
+    // a progress saved by a newer library: keep what still reads
+    while (schema < PROGRESS_SCHEMA && MIGRATIONS[schema]) data = MIGRATIONS[schema++](data);
+    const d = sanitizeProgress(data);
+    if (saved.content !== this.content) {
+      // the content changed: the times and chapter indices no longer point where they did
+      d.lastT = 0; d.maxT = 0; d.seen = {};
+    }
+    return d;
+  }
+
+  save(): void { this.store.save(this.key, { schema: PROGRESS_SCHEMA, content: this.content, data: this.d } satisfies SavedProgress); }
   reset(): void { this.d = emptyProgress(); this.save(); }
   /** the learner's progress as a file they can keep or show */
-  export(): string { return JSON.stringify({ key: this.key, at: new Date().toISOString(), progress: this.d }, null, 2); }
+  export(): string { return JSON.stringify({ key: this.key, schema: PROGRESS_SCHEMA, content: this.content, at: new Date().toISOString(), progress: this.d }, null, 2); }
   get started(): boolean { return this.d.maxT > 5; }
   setT(t: number): void { this.d.lastT = t; this.d.maxT = Math.max(this.d.maxT, t); }
   seen(chapter: number): void { if (!this.d.seen[chapter]) { this.d.seen[chapter] = 1; this.save(); } }
@@ -116,66 +187,33 @@ export class Progress {
   setStepMode(on: boolean): void { this.d.stepMode = on; this.save(); }
 }
 
-// ------------------------------------------------------------------ stats
+// ----------------------------------------------------------------- reviews
 
-export interface ModuleStats {
-  chapters: number; seen: number;
-  quiz: number; answered: number; right: number;
-  missions: number; missDone: number;
-  code: number; codeDone: number;
-  explain: number; explainDone: number;
-  /** estimated working time, in minutes */
-  minutes: number;
+/**
+ * The review that opens a module: up to `n` questions from the earlier
+ * modules — the due ones first, then those never answered, then the oldest.
+ * Starts a review session.
+ */
+export function moduleReview(tl: Timeline, prog: Progress, module: number, n = 3): QuizStop[] {
+  const pool = tl.bank.filter((q) => q.quiz.module < module);
+  if (!pool.length) return [];
+  const ids = pool.map((q) => q.id);
+  const chosen: string[] = prog.due(ids).slice(0, n);
+  for (const id of ids) if (chosen.length < n && !(id in prog.d.rev) && !chosen.includes(id)) chosen.push(id);
+  const rest = ids.filter((id) => !chosen.includes(id)).sort((a, b) => (prog.d.rev[a]?.next ?? 0) - (prog.d.rev[b]?.next ?? 0));
+  while (chosen.length < n && rest.length) chosen.push(rest.shift()!);
+  prog.newSession();
+  return chosen.map((id) => pool.find((q) => q.id === id)!);
 }
 
-/** Minutes of work per element: reading and thinking, not just reading. */
-export const EFFORT = { step: 1, question: 1.5, experiment: 4, explain: 3, exercise: 10, test: 10, review: 3 };
-
-export function moduleStats(tl: Timeline, prog: Progress, i: number, exercises: { id: string; module: string }[], effort = EFFORT): ModuleStats {
-  const m = tl.modules[i];
-  const inMod = (t: number) => t >= m.t0 - 1e-3 && t < m.t1 - 1e-3;
-  const stops = tl.stops.filter((s) => s.module === i);
-  const quiz = stops.filter((s) => s.kind === 'quiz');
-  const miss = stops.filter((s) => s.kind === 'try' && s.goals);
-  const expl = stops.filter((s) => s.kind === 'explain');
-  const code = exercises.filter((c) => c.module === m.id);
-  const caps = tl.caps.filter((c) => inMod(c.t)).length;
-  const tries = stops.filter((s) => s.kind === 'try').length;
-  const tests = stops.filter((s) => s.kind === 'test').length;
-  const reviews = stops.filter((s) => s.kind === 'review').length;
-  const minutes = Math.round(caps * effort.step + quiz.length * effort.question + tries * effort.experiment
-    + expl.length * effort.explain + code.length * effort.exercise + tests * effort.test + reviews * effort.review);
-  return {
-    chapters: m.chapters.length, seen: m.chapters.filter((k) => prog.d.seen[k]).length,
-    quiz: quiz.length, answered: quiz.filter((s) => s.id in prog.d.quiz).length, right: quiz.filter((s) => prog.d.quiz[s.id] === 1).length,
-    missions: miss.length, missDone: miss.filter((s) => prog.d.missions[s.id]).length,
-    code: code.length, codeDone: code.filter((c) => prog.d.code[c.id]?.done).length,
-    explain: expl.length, explainDone: expl.filter((s) => prog.d.explain[s.id]?.text).length,
-    minutes,
-  };
+/**
+ * A review session from the home page: up to `n` questions already answered,
+ * the due ones first — or, when none is due, the least known. Starts a review session.
+ */
+export function homeReview(tl: Timeline, prog: Progress, n = 5): QuizStop[] {
+  const answered = tl.bank.filter((s) => s.id in prog.d.rev);
+  let ids = prog.due(answered.map((s) => s.id));
+  if (!ids.length) ids = answered.map((s) => s.id).sort((a, b) => prog.d.rev[a].box - prog.d.rev[b].box);
+  prog.newSession();
+  return ids.slice(0, n).map((id) => answered.find((s) => s.id === id)!);
 }
-
-/** Estimated working time of the whole course, in minutes (the bonus modules apart), as the home page shows it. */
-export function courseMinutes(tl: Timeline, exercises: { id: string; module: string }[], effort = EFFORT): number {
-  const prog = new Progress('', 0, { load: () => null, save() {} });
-  return tl.modules.reduce((s, m, i) => s + (m.kind === 'bonus' ? 0 : moduleStats(tl, prog, i, exercises, effort).minutes), 0);
-}
-
-/** The minutes an announced effort says (« trois à quatre heures », « 90 min », « two hours »): [min, max], or null when it gives no duration. */
-export function effortMinutes(s: string): [number, number] | null {
-  const t = ` ${s.toLowerCase().replace(/[’']/g, ' ')} `;
-  const n = `(\\d+(?:[.,]\\d+)?|${Object.keys(NUMBER_WORDS).join('|')})`;
-  const m = new RegExp(`[\\s(]${n}(?:\\s*(?:à|-|–|ou|to|or)\\s*${n})?\\s*(heures?|hours?|h(?![a-zà-ü])|minutes?|min(?![a-zà-ü]))(\\s+(?:et\\s+demie|and\\s+a\\s+half))?`).exec(t);
-  if (!m) return null;
-  const val = (x: string) => NUMBER_WORDS[x] ?? Number(x.replace(',', '.'));
-  const unit = /^m/.test(m[3]) ? 1 : 60;
-  const half = m[4] ? 30 : 0;
-  const lo = val(m[1]) * unit, hi = (m[2] ? val(m[2]) : val(m[1])) * unit + half;
-  return [m[2] ? lo : lo + half, hi];
-}
-const NUMBER_WORDS: Record<string, number> = {
-  une: 1, un: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10, onze: 11, douze: 12, quinze: 15, vingt: 20, trente: 30, quarante: 40, cinquante: 50,
-  one: 1, two: 2, three: 3, four: 4, five: 5, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, fifty: 50,
-};
-
-export const fmtMinutes = (m: number): string => (m < 60 ? `≈ ${m} min` : `≈ ${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, '0')}`);

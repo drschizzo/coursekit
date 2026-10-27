@@ -162,6 +162,26 @@ Fichiers : `src/model.ts`, `src/tune.ts`, `src/diagrams.ts`, `src/stage.ts`, `sr
 `src/main.ts`. S’inspirer de `courses/fusee`, qui utilise tous les éléments du format. La
 référence du format est `docs/ecrire-un-cours.md` ; celle de l’API, `docs/reference.md`.
 
+Le cours n’utilise que l’API publique des paquets ; il ne modifie jamais la bibliothèque
+(`packages/`). Les pratiques d’organisation à suivre :
+
+- **Une seule déclaration.** `export default defineCourse({ …, model, exercises, workshop, … })` :
+  l’atelier (`workshop` : helpers, scénarios, assemblage) est un champ du cours, comme le modèle.
+- **Les imports par paquet.** Les primitives de dessin et la palette `CC` viennent de
+  `@coursekit/diagrams` ; les fiches de maths (`pickCapsules`) de `@coursekit/toolbox` ; les
+  nombres (`fr`, `dec`, `pct`) et les questions (`choice`, `numeric`) de `@coursekit/core`.
+- **La palette partagée.** Schémas, scène et aperçus de l’atelier dessinent avec `CC` (orange,
+  bleu, vert, rouge…), jamais avec leurs valeurs hexadécimales : c’est la palette du lecteur.
+  Les couleurs propres au sujet (un ciel, un sol, un mur) se nomment dans un objet de couleurs du
+  cours (`COL`).
+- **La langue.** `language: 'fr'` (ou `'en'`) choisit les textes de l’interface, le format des
+  nombres et les tournures interdites ; `labels` ne sert qu’à remplacer un texte de l’interface
+  qui ne convient pas au sujet. Les textes du cours (étapes, questions, schémas) sont écrits
+  dans cette langue.
+- **Des identifiants stables.** La progression de l’élève est rangée par identifiant de question,
+  d’expérience et d’exercice : `version` s’augmente quand le contenu change, mais les
+  identifiants existants ne changent pas (sinon les réponses de l’élève sont perdues).
+
 ## 4. Écrire et régler le modèle — avant tout contenu
 
 1. Écrire `model.ts` : constantes, fonctions pures, une fonction de simulation qui renvoie des
@@ -309,8 +329,8 @@ Le contenu s’écrit dans l’ordre de lecture avec le constructeur (`c.module`
 
 ## 7. Vérifier
 
-1. `npm run typecheck`, `npm run tune -w courses/<id>` puis `npm run check -w courses/<id>`
-   (ou `npm test` pour tout le dépôt). Corriger jusqu’à
+1. `npm run typecheck`, `npm run lint`, `npm run tune -w courses/<id>` puis
+   `npm run check -w courses/<id>` (ou `npm test` pour tout le dépôt, ce que lance aussi la CI). Corriger jusqu’à
    « ✓ prêt (0 remarque) » : les remarques `layout` (texte hors du cadre, textes superposés,
    trouvées en dessinant chaque schéma aux bornes des expériences), `stage-layout` (texte de scène
    hors de `safe`, sur un écran large ou étroit) et `effort` (durée annoncée loin de l’estimation)
@@ -357,7 +377,8 @@ Le contenu s’écrit dans l’ordre de lecture avec le constructeur (`c.module`
 
 ## 8. Livrer
 
-Commit du dossier du cours, puis un compte rendu court : la question centrale, les idées-clés,
+Commit du dossier du cours (la CI le publie avec les autres sur GitHub Pages une fois sur
+`main`, à l’adresse `…/<id>/`), puis un compte rendu court : la question centrale, les idées-clés,
 le plan des modules, le modèle et ses fenêtres réglées (avec le nombre de graines), ce que la
 validation a comparé et corrigé, ce que la relecture indépendante a trouvé et ce qui en a été
 corrigé, les statistiques de `coursekit stats`, la commande pour lancer
@@ -391,6 +412,8 @@ faibles, notions laissées de côté).
 - [ ] Aucun résultat écrit à la main dans les textes ; aucun calcul lourd dans les gabarits.
 - [ ] `coursekit tune` : toutes les fenêtres attendues vérifiées.
 - [ ] `coursekit check` : prêt, 0 remarque (dont `spoiler`, `term-early`, `repeat`).
+- [ ] `npm run lint` et `npm run typecheck` passent ; les couleurs de la palette passent par `CC` ;
+      `workshop` déclaré dans `defineCourse`.
 - [ ] `coursekit parcours` relu en entier, et par un agent sans contexte ; ses défauts corrigés.
 - [ ] Chargement sous 2 s ; grille `?shots` relue ; scène dans `safe` sur écran étroit ;
       console sans erreur dans un onglet neuf.

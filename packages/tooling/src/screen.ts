@@ -7,8 +7,9 @@
 // Also the small text tools those rules share: normalised words, numbers
 // read back from French figures, the overlap of two texts.
 
-import type { CourseDef, Rect, Timeline, Vals } from '@coursekit/core';
-import { TOOL_DIAGRAMS, beginBudget } from '@coursekit/diagrams';
+import { captionText, wideSafeArea, type Caption, type CourseDef, type DiagramEnv, type Rect, type Timeline, type Vals } from '@coursekit/core';
+import { beginBudget } from '@coursekit/diagrams';
+import { TOOL_DIAGRAMS } from '@coursekit/toolbox';
 import { mockContext } from './mockctx.ts';
 
 /** A scene of a canvasStage, as the checker sees it (see @coursekit/ui). */
@@ -20,10 +21,11 @@ export interface SceneLike {
 
 /**
  * The two windows the stage scenes are drawn in: a wide screen, the text on
- * the left and the diagram on the right; a phone, the panels above and below.
+ * the left and the diagram on the right (its safe area comes from the
+ * player's LAYOUT); a phone, the panels above and below.
  */
 export const SAFE_ZONES: { name: string; w: number; h: number; safe: Rect }[] = [
-  { name: 'large', w: 1440, h: 900, safe: { x: 440, y: 72, w: 560, h: 740 } },
+  { name: 'large', w: 1440, h: 900, safe: wideSafeArea(1440, 900) },
   { name: 'étroite', w: 390, h: 844, safe: { x: 8, y: 64, w: 374, h: 300 } },
 ];
 
@@ -40,7 +42,7 @@ const SCENE_TIMES = [1.5, 6];
 
 const valsKey = (v: Vals) => JSON.stringify(Object.entries(v).sort());
 /** A step's text; a lazy text that fails is reported by the walk, and reads as empty here. */
-export const textOf = (c: { text: string }): string => { try { return c.text; } catch { return ''; } };
+export const textOf = (c: Caption): string => { try { return captionText(c); } catch { return ''; } };
 
 export interface ScreenReader {
   at(t: number, v?: Vals): Screen;
@@ -50,7 +52,7 @@ export interface ScreenReader {
 
 export function screenReader(course: CourseDef, tl: Timeline, scenes?: Record<string, SceneLike>): ScreenReader {
   const ctx = mockContext();
-  const draw = { ...TOOL_DIAGRAMS, ...(course.diagrams ?? {}) } as Record<string, (c: CanvasRenderingContext2D, e: any) => void>;
+  const draw = { ...TOOL_DIAGRAMS, ...(course.diagrams ?? {}) } as Record<string, (c: CanvasRenderingContext2D, e: DiagramEnv) => void>;
   const dcache = new Map<string, string[]>();
   const scache = new Map<string, string[]>();
   const diagramTexts = (name: string, arg: string | undefined, v: Vals): string[] => {
@@ -123,7 +125,7 @@ const STOP = new Set((
 
 /** Lower case, without accents, typographic apostrophes and spaces made plain. */
 export const norm = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
-  .replace(/[’`]/g, '\'').replace(/[   ]/g, ' ').replace(/\s+/g, ' ').trim();
+  .replace(/[’`]/g, '\'').replace(/[\u00a0\u202f\u2009]/g, ' ').replace(/\s+/g, ' ').trim();
 
 /** A rough stem: « parties », « partie » and « parti » meet. */
 const stem = (w: string): string => (w.length > 4 ? w.replace(/(es|s|x|e)$/, '') : w);
@@ -156,9 +158,9 @@ export const jaccard = (a: Set<string>, b: Set<string>): number => {
 /** The numbers written in a text, French or not: « 255 168 », « −0,25 », « 33 % » → 255168, −0.25, 33. */
 export function numbersIn(s: string): number[] {
   const out: number[] = [];
-  const re = /[−-]?\d{1,3}(?:[   ]\d{3})+(?:,\d+)?|[−-]?\d+(?:[,.]\d+)?/g;
+  const re = /[−-]?\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:,\d+)?|[−-]?\d+(?:[,.]\d+)?/g;
   for (const m of s.matchAll(re)) {
-    const x = Number(m[0].replace(/[   ]/g, '').replace('−', '-').replace(',', '.'));
+    const x = Number(m[0].replace(/[ \u00a0\u202f]/g, '').replace('−', '-').replace(',', '.'));
     if (Number.isFinite(x)) out.push(x);
   }
   return out;

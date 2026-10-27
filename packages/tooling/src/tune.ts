@@ -130,7 +130,7 @@ export function runTune<P extends Params, R>(spec: TuneSpec<P, R>): TuneReport {
   const failed = new Set<string>();
   for (const e of spec.expect ?? []) {
     let r: boolean | string;
-    try { r = isSeedTest(e) ? seedTest(e, rows, keys) : e.test(rows); } catch (x: any) { r = `erreur : ${x?.message ?? x}`; }
+    try { r = isSeedTest(e) ? seedTest(e, rows, keys) : e.test(rows); } catch (x) { r = `erreur : ${(x as Error)?.message ?? x}`; }
     if (r !== true) { failures.push(`${e.label} : ${r === false ? 'non vérifié' : r}`); failed.add(e.label); }
   }
   if (spec.expect?.length) {

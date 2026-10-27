@@ -3,7 +3,7 @@
 // course/diagrams5.ts. Most of them follow the
 // pointer, so the learner can move a point and read the numbers change.
 
-import { CC, DH, DW, alpha, arrow, axes, circle, clamp, dot, line, panel, text } from './draw.ts';
+import { CC, DH, DW, alpha, arrow, axes, circle, clamp, dot, line, panel, text } from '@coursekit/diagrams';
 import type { DiagramEnv as DiagEnv } from '@coursekit/core';
 
 type Ctx = CanvasRenderingContext2D;

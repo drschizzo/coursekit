@@ -6,7 +6,7 @@ fait varier des réglages, et d’exercices. Chaque chiffre et chaque schéma du
 par une petite simulation du sujet, ce qui permet de vérifier automatiquement que le cours ne
 dit rien de faux.
 
-Le dépôt contient la bibliothèque, trois cours d’exemple et une skill pour Claude Code,
+Le dépôt contient la bibliothèque, six cours d’exemple et une skill pour Claude Code,
 `/generate_course`, qui écrit un cours complet à partir d’un sujet.
 
 Deux des cours d’exemple sont en ligne et peuvent être suivis sans rien installer :
@@ -143,7 +143,7 @@ Le site est dans le dossier `courses/<nom-du-cours>/dist`. Pour le regarder avan
 en ligne : `npm run preview -w courses/<nom-du-cours>`.
 
 Le contenu de `dist` se dépose tel quel chez n’importe quel hébergeur de sites statiques, dans
-n’importe quel dossier. Deux possibilités simples :
+n’importe quel dossier. Trois possibilités simples :
 
 - **Netlify** (gratuit pour cet usage) : créer un compte sur https://www.netlify.com, choisir
   d’ajouter un site en le déployant manuellement, puis glisser le dossier `dist` dans la page.
@@ -151,8 +151,10 @@ n’importe quel dossier. Deux possibilités simples :
 - **Un hébergement existant** (site d’un établissement, hébergement personnel) : copier le
   contenu de `dist` dans un dossier du site, par exemple avec un logiciel FTP. Le cours est
   alors à l’adresse de ce dossier.
-
-Les deux cours d’exemple en ligne ont été déposés sur Netlify de cette façon.
+- **GitHub Pages**, pour un dépôt (ou un fork) sur GitHub : la CI du projet construit et publie
+  automatiquement tous les cours du dossier `courses/` à chaque mise à jour de `main`, chacun à
+  l’adresse `https://<compte>.github.io/<dépôt>/<nom-du-cours>/`. Il suffit de l’activer une
+  fois (voir [docs/diffusion.md](docs/diffusion.md#tous-les-cours-dexemple-sur-github-pages)).
 
 Pour mettre en ligne une nouvelle version du cours, relancer `npm run build` et déposer à
 nouveau le dossier `dist`.
@@ -218,14 +220,17 @@ refusée, schémas qui débordent aux valeurs extrêmes.
 
 | Dossier | Contenu |
 |---|---|
-| [`packages/core`](packages/core) | Le format d’un cours, le constructeur, la frise, la progression enregistrée, les nombres en français. Sans DOM. |
-| [`packages/diagrams`](packages/diagrams) | Les primitives de dessin des schémas, le cache, les fiches mathématiques de la boîte à outils. |
+| [`packages/core`](packages/core) | Le format d’un cours, le constructeur, la frise et sa lecture, la progression enregistrée, les textes de l’interface (français, anglais), les nombres. Sans DOM. |
+| [`packages/diagrams`](packages/diagrams) | Les primitives de dessin des schémas, la palette, le cache. |
+| [`packages/toolbox`](packages/toolbox) | Les fiches mathématiques de la boîte à outils et leurs schémas. |
 | [`packages/exercises`](packages/exercises) | Les types d’exercices de l’atelier et leur vérification. Sans DOM. |
 | [`packages/ui`](packages/ui) | Le lecteur (`mountCourse`), les scènes fournies, le thème. |
-| [`packages/tooling`](packages/tooling) | La commande `coursekit` : `check`, `tune`, `stats`, `new`. |
-| [`courses/fusee`](courses/fusee) | Un cours complet, écrit en même temps que la bibliothèque : comment fonctionne une fusée. |
+| [`packages/tooling`](packages/tooling) | La commande `coursekit` : `check`, `tune`, `stats`, `parcours`, `new`. |
+| [`courses/fusee`](courses/fusee) | Un cours complet : comment fonctionne une fusée. |
 | [`courses/epidemie`](courses/epidemie) | Un cours complet écrit avec `/generate_course` : comment une épidémie se propage. |
 | [`courses/demo-mini`](courses/demo-mini) | Un cours jouet qui utilise chaque élément du format une fois. |
+| `courses/alphazero`, `courses/nca`, `courses/permutants` | D’autres cours d’exemple : AlphaZero, les automates cellulaires neuronaux, les permutations. |
+| [`scripts/build-site.ts`](scripts/build-site.ts), [`.github/workflows`](.github/workflows) | La CI et la publication des cours d’exemple sur GitHub Pages. |
 | [`.claude/skills/generate_course`](.claude/skills/generate_course) | La skill Claude Code `/generate_course`. |
 | [`docs`](docs) | La documentation. |
 
@@ -236,7 +241,8 @@ Les paquets et les cours sont des *workspaces* npm. Il n’y a pas d’étape de
 
 ```bash
 npm install
-npm test                                  # typage, règles du vérificateur, check et tune de tous les cours
+npm test                                  # typage, lint, tests unitaires, check et tune de tous les cours
+npm run build:site                        # tous les cours d’exemple en un site, dans _site/
 npm run dev:fusee                         # un cours d’exemple (aussi dev:epidemie, dev:demo)
 npm run new -- courses/mon-cours "Mon cours"
 npm run dev -w courses/mon-cours          # serveur de développement d’un cours
@@ -297,8 +303,11 @@ Les conventions sont dans [CONTRIBUTING.md](CONTRIBUTING.md). Les points princip
 - une nouvelle règle du vérificateur s’accompagne d’un défaut dans
   `packages/tooling/test/faulty.ts` qui la déclenche ;
 - un changement du format met à jour la documentation, la skill et le `CHANGELOG.md` ;
-- les cours du dépôt servent de tests d’intégration : `npm test` doit passer et chacun doit
-  rester à « ✓ prêt (0 remarque) ».
+- les cours du dépôt sont des exemples : ils illustrent la bonne façon de se servir de la
+  bibliothèque, sont mis à jour à chacun de ses changements, et doivent rester à « ✓ prêt
+  (0 remarque) » ; les tests unitaires de la bibliothèque n’en dépendent pas ;
+- la CI lance `npm test` à chaque push et pull request, et publie les cours d’exemple sur GitHub
+  Pages depuis `main`.
 
 ## Documentation
 

@@ -1,7 +1,7 @@
 // The kinds of workshop exercises. Only `code` needs programming; the others
 // make the workshop useful for any subject.
 
-import type { ExerciseBase, QuizSpec } from '@coursekit/core';
+import type { CourseDef, ExerciseBase, QuizSpec } from '@coursekit/core';
 
 /** A set of functions by name: the learner's where they wrote one, the reference elsewhere. */
 export type Impl = Record<string, Function>;
@@ -11,6 +11,8 @@ export interface TestResult { label: string; ok: boolean; msg: string }
 export interface Verdict {
   ok: boolean;
   msg: string;
+  /** why it failed, when the interface reacts to it: the code does not compile */
+  reason?: 'compile';
   results?: TestResult[];
   /** a curve to compare (learner and reference), shown under the preview */
   chart?: { label: string; unit?: string; mine: number[]; ref: number[] };
@@ -111,3 +113,6 @@ export interface WorkshopConfig {
     preview?(ctx: CanvasRenderingContext2D, impl: Impl, t: number): void;
   };
 }
+
+/** A course with its workshop: what the player and the checker take. */
+export type Course = CourseDef<Exercise, WorkshopConfig>;

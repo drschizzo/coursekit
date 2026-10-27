@@ -14,6 +14,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { scaffold } from './scaffold.ts';
+import type { SceneLike } from './screen.ts';
 
 const [cmd, arg, ...rest] = process.argv.slice(2);
 
@@ -23,14 +24,14 @@ async function load(file: string) {
 }
 
 /** The stage next to the course file (`stage.ts`, exporting `stage()` or a default), for the checker. */
-async function loadStage(courseFile: string): Promise<{ stage?: any; stageError?: string }> {
+async function loadStage(courseFile: string): Promise<{ stage?: { scenes?: Record<string, SceneLike> }; stageError?: string }> {
   const file = join(dirname(resolve(courseFile)), 'stage.ts');
   if (!existsSync(file)) return {};
   try {
     const mod = await import(pathToFileURL(file).href);
     const s = mod.stage ?? mod.default;
     return { stage: typeof s === 'function' ? s() : s };
-  } catch (e: any) { return { stageError: String(e?.message ?? e) }; }
+  } catch (e) { return { stageError: String((e as Error)?.message ?? e) }; }
 }
 
 async function main(): Promise<number> {
